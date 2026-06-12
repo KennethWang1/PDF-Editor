@@ -1,0 +1,19 @@
+FROM node:23-alpine
+WORKDIR /ResuMade
+
+ARG gid=2000
+ARG group=appgroup
+ARG uid=4200
+ARG user=appuser
+
+COPY package.json ./
+RUN npm install
+
+COPY ./ ./backend
+EXPOSE 3001
+
+#RUN getent group ${group} || groupadd -f -g ${gid} ${group}
+#RUN getent passwd ${user} || useradd -u ${uid} -g ${group} -s /bin/sh ${user}
+#USER ${user}
+
+CMD ["node","--env-file", "./backend/.env", "./backend/app.js"]

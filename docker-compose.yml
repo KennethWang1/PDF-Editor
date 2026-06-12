@@ -1,0 +1,87 @@
+version: '3'
+
+volumes:
+  server-v-node-modules:
+    name: "server-v-node-modules"
+  database-v:
+    name: "database-v"
+
+services:
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: resumade-nginx
+    ports:
+      - 80:80
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - my-network
+
+  backend:
+    #image: resumade:backend
+    container_name: resumade-backend
+    build:
+      context: ./ResuMade/backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./server:/server
+      #- ./ResuMade/backend:/server
+      - server-v-node-modules:/server/node_modules
+    depends_on:
+      pg:
+        condition: service_healthy
+    ports:
+      - 3001:3001
+    networks:
+      - my-network
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_DATABASE: ${DB_DATABASE}
+      DB_HOST: pg
+      DB_PORT: 5432
+      PORT: ${PORT}
+
+  frontend:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    container_name: resumade-frontend
+    networks:
+      - my-network
+
+  pg:
+    #image: postgres:17
+    container_name: resumade-pg
+    restart: always
+    shm_size: 128mb
+    command: "-p 5432"
+    build: 
+      context: ./ResuMade
+      dockerfile: Dockerfile
+    volumes:
+      - database-v:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - 5432:5432
+    env_file:
+      - ./ResuMade/backend/.env
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -p 5432 -U ${DB_USER} -d ${DB_DATABASE}"]
+      start_period: 0s
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - my-network
+
+networks:
+  my-network:
+    driver: bridge
