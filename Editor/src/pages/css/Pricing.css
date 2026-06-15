@@ -1,0 +1,18 @@
+table{
+    position: relative;
+    border-collapse: collapse; 
+    border-spacing: 0px;
+    table-layout: fixed;
+    width: 18.4vw;
+    left: calc(30vw - 16vw);
+}
+
+td, th{
+    border: solid 1px black;
+    padding: 10px;
+    width: 9.2vw;
+}
+
+th{
+    padding:10px;
+}

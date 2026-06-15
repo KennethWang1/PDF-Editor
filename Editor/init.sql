@@ -1,0 +1,16 @@
+CREATE TABLE users(
+    id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    password VARCHAR(256) NOT NULL,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    username VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    salt BYTEA NOT NULL,
+    token TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE tokenauth(
+    token TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    jwt_token TEXT NOT NULL
+);

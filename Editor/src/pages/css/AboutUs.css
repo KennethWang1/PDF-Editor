@@ -1,0 +1,20 @@
+body{
+    width: 100vw;
+    height: 100vh;
+}
+
+#body{
+    width:60vw;
+    height: 74vw;
+    background-color: var(--hue50);
+}
+
+#left{
+    width: 30vw;
+    height: 74vw;
+}
+
+#right{
+    width: 30vw;
+    height: 74vw;
+}

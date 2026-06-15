@@ -1,0 +1,50 @@
+#login-container{
+    position: fixed;
+    width:60vw;
+    height: 60vh;
+    top:20vh;
+    left:20vw;
+    border-radius: 10px;
+    background-color: white;
+    display: flex;
+    flex-direction: column;
+}
+
+#login-title{
+    position: relative;
+    padding: 2.5vh;
+    text-align: center;
+    font-size: 40px;
+}
+
+#signup-link{
+    position: absolute;
+    padding: 2.5vh;
+    text-align: center;
+    display: inline-block;
+    align-self: center;
+    bottom: 1vh;
+}
+
+#submitbutton{
+    margin: 5px;
+    margin-bottom: 6px;
+    border: 0px;
+    width:80px;
+    height: 25px;
+    position: relative;
+    border-radius: 5px;
+    text-align: center;
+    align-self: right;
+    background-color: var(--primary700);
+    color:var(--hue50);
+    box-shadow: 0px 2px 2px #00000033;
+}
+
+#exit-login{
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 25px;
+    height: 20px;
+ }

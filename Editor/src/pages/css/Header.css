@@ -1,0 +1,29 @@
+header{
+    height: 2.75vw;
+    width: 100vw;
+    position: fixed;
+    display: flex;
+    background-color: yellow;
+}
+
+#user{
+    position: relative;
+    height: 100%;
+}
+
+header #user p{
+    position: absolute;
+    margin: auto;
+    font-size: calc(0.5378vw*3);
+    left: 91.622vw;
+    top: 0vh;
+}
+
+header #user img{
+    position: absolute;
+    margin: auto;
+    width: calc(0.7378vw*3);
+    height: calc(0.7378vw*3);
+    left: 88.4086vw;
+    padding-top: 0.25vw;
+}

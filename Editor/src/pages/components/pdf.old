@@ -1,0 +1,508 @@
+import './pdf.css';
+import React, { useState, useRef, useEffect } from 'react';
+import { fabric } from 'fabric';
+import { ChromePicker } from 'react-color';
+
+const { Canvas, Textbox, Line, Rect, Group } = fabric;
+
+function PdfEditor() {
+  const canvasRef = useRef(null);
+  const [canvas, setCanvas] = useState(null);
+  const [cursorMode, setCursorMode] = useState('default');
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showBorderColorPicker, setShowBorderColorPicker] = useState(false);
+  const [color, setColor] = useState('black');         // For text fill of new objects
+  const [borderColor, setBorderColor] = useState('black'); // For line stroke of new objects
+  const [fontSize, setFontSize] = useState(12);          // Default font size for new text objects
+  const [backgroundColor, setBackgroundColor] = useState('#fff'); // Default background color for new text objects
+  const [borderWidth, setBorderWidth] = useState(1);     // Default border width for new lines
+  const [initClickX, setInitClickX] = useState(null);
+  const [initClickY, setInitClickY] = useState(null);
+  const [bold, setBold] = useState(false);
+  const [italic, setItalic] = useState(false);
+  const [lineSpacing, setLineSpacing] = useState(1);
+  const [alignment, setAlignment] = useState('left');
+
+  // Initialize the Fabric canvas
+  useEffect(() => {
+      const fabricCanvas = new Canvas('fabricCanvas', {
+          backgroundColor: '#fff',
+          hoverCursor: 'default',
+          borderColor: 'black',
+          borderWidth: 1,
+          width: window.innerWidth,
+          height: 600
+      });
+      setCanvas(fabricCanvas);
+
+      const handleResize = () => {
+          fabricCanvas.setDimensions({
+              width: window.innerWidth,
+              height: 600
+          });
+          fabricCanvas.renderAll();
+      };
+
+      window.addEventListener('resize', handleResize);
+
+      return () => {
+          window.removeEventListener('resize', handleResize);
+          fabricCanvas.dispose();
+      };
+  }, []);
+
+  useEffect(() => {
+      if (canvas) {
+          const handleScaling = (e) => {
+              const target = e.target;
+              
+              // Handle scaling for text groups
+              if (target && target.isTextGroup) {
+                  const textObj = target.textObj;
+                  const outline = target.outline;
+                  
+                  // Get the current scale factors
+                  const scaleX = target.scaleX;
+                  const scaleY = target.scaleY;
+                  
+                  if (scaleX !== 1 || scaleY !== 1) {
+                      // Store the current position before scaling
+                      const currentLeft = target.left;
+                      const currentTop = target.top;
+                      
+                      // Calculate new dimensions
+                      const newOutlineWidth = outline.width * scaleX;
+                      const newOutlineHeight = outline.height * scaleY;
+                      const newTextWidth = textObj.width * scaleX;
+                      const newTextHeight = textObj.height * scaleY;
+                      
+                      // Update outline dimensions and ensure it stays centered
+                      outline.set({
+                          left: -newOutlineWidth / 2,    // Keep centered horizontally
+                          top: -newOutlineHeight / 2,    // Keep centered vertically
+                          width: newOutlineWidth,
+                          height: newOutlineHeight
+                      });
+                      
+                      // Update text box dimensions and ensure it stays centered
+                      // Use the same width as outline to ensure perfect synchronization
+                      textObj.set({
+                          left: -newOutlineWidth / 2,    // Use outline width for consistency
+                          top: -newOutlineHeight / 2,    // Use outline height for consistency
+                          width: newOutlineWidth,        // Match outline width exactly
+                          height: newOutlineHeight,      // Match outline height exactly
+                          fontSize: textObj.originalFontSize || target.originalFontSize
+                      });
+                      
+                      // Reset group scale to 1
+                      target.set({
+                          scaleX: 1,
+                          scaleY: 1
+                      });
+                      
+                      // Manually update the group's width and height to match the outline
+                      target.set({
+                          width: newOutlineWidth,
+                          height: newOutlineHeight,
+                          left: currentLeft,  // Restore original position
+                          top: currentTop     // Restore original position
+                      });
+                      
+                      // Update the group's coordinates to match the new object sizes
+                      target.setCoords();
+                      
+                      // Refresh the canvas to show updated selection box
+                      canvas.renderAll();
+                  }
+              }
+              // Handle scaling for regular text objects (fallback)
+              else if (target && (target.type === 'i-text' || target.type === 'textbox')) {
+                  const scaleX = target.scaleX;
+                  const scaleY = target.scaleY;
+                  
+                  if (scaleX !== 1 || scaleY !== 1) {
+                      target.set({
+                          width: target.width * scaleX,
+                          height: target.height * scaleY,
+                          scaleX: 1,
+                          scaleY: 1
+                      });
+                      target.setCoords();
+                      canvas.renderAll();
+                  }
+              }
+          };
+
+          const maintainTextBoxSize = (e) => {
+              const target = e.target;
+              if (target && (target.type === 'i-text' || target.type === 'textbox')) {
+                  // Ensure text wrapping is enabled and font size is preserved
+                  target.set({
+                      splitByGrapheme: true,
+                      fontSize: target.originalFontSize || target.fontSize
+                  });
+                  
+                  target.setCoords();
+                  canvas.renderAll();
+              }
+          };
+
+          const handleGroupSelection = (e) => {
+              const target = e.target;
+              if (target && target.isTextGroup) {
+                  // When group is selected, make sure text editing is available
+                  const textObj = target.textObj;
+                  if (textObj) {
+                      // Allow double-click to enter text editing
+                      target.on('mousedblclick', () => {
+                          canvas.setActiveObject(textObj);
+                          textObj.enterEditing();
+                      });
+                  }
+              }
+          };
+
+          const handleScalingComplete = (e) => {
+              const target = e.target;
+              if (target && target.isTextGroup) {
+                  const outline = target.outline;
+                  const textObj = target.textObj;
+                  
+                  // Store the current position before any operations
+                  const currentLeft = target.left;
+                  const currentTop = target.top;
+                  
+                  // Ensure both outline and text stay centered in group and have matching dimensions
+                  outline.set({
+                      left: -outline.width / 2,
+                      top: -outline.height / 2
+                  });
+                  
+                  textObj.set({
+                      left: -outline.width / 2,   // Use outline width for consistency
+                      top: -outline.height / 2,   // Use outline height for consistency
+                      width: outline.width,       // Match outline width exactly
+                      height: outline.height      // Match outline height exactly
+                  });
+                  
+                  // Ensure the group dimensions match the outline
+                  target.set({
+                      width: outline.width,
+                      height: outline.height,
+                      left: currentLeft,  // Preserve position
+                      top: currentTop     // Preserve position
+                  });
+                  
+                  // Force the group to recalculate by temporarily removing and re-adding
+                  const wasActive = canvas.getActiveObject() === target;
+                  canvas.remove(target);
+                  canvas.add(target);
+                  
+                  // Restore selection if it was active
+                  if (wasActive) {
+                      canvas.setActiveObject(target);
+                  }
+                  
+                  // Ensure position is still correct after re-adding
+                  target.set({
+                      left: currentLeft,
+                      top: currentTop
+                  });
+                  
+                  // Double-check that child objects are still centered and synchronized
+                  outline.set({ 
+                      left: -outline.width / 2, 
+                      top: -outline.height / 2 
+                  });
+                  textObj.set({ 
+                      left: -outline.width / 2,   // Use outline dimensions
+                      top: -outline.height / 2,   // Use outline dimensions
+                      width: outline.width,       // Sync with outline
+                      height: outline.height      // Sync with outline
+                  });
+                  
+                  target.setCoords();
+                  canvas.renderAll();
+              }
+          };
+
+          // Handle scaling events to prevent text stretching
+          canvas.on('object:scaling', handleScaling);
+          canvas.on('object:scaled', handleScalingComplete); // Add this event
+          canvas.on('text:changed', maintainTextBoxSize);
+          canvas.on('text:editing:entered', maintainTextBoxSize);
+          canvas.on('text:editing:exited', maintainTextBoxSize);
+          canvas.on('selection:created', handleGroupSelection);
+          canvas.on('selection:updated', handleGroupSelection);
+          
+          return () => {
+              canvas.off('object:scaling', handleScaling);
+              canvas.off('object:scaled', handleScalingComplete); // Remove this event
+              canvas.off('text:changed', maintainTextBoxSize);
+              canvas.off('text:editing:entered', maintainTextBoxSize);
+              canvas.off('text:editing:exited', maintainTextBoxSize);
+              canvas.off('selection:created', handleGroupSelection);
+              canvas.off('selection:updated', handleGroupSelection);
+          };
+      }
+  }, [canvas]);
+
+  // Set up Fabric canvas click event to add editable text or line based on the current mode
+  useEffect(() => {
+      if (canvas) {
+          const handleCanvasClick = (e) => {
+              const pointer = canvas.getPointer(e.e);
+              switch (cursorMode) {
+                  case 'text': {
+                      const textBoxWidth = 200;
+                      const textBoxHeight = 50;
+                      
+                      // Create the text box
+                      const textObj = new Textbox('write here', {
+                          left: -textBoxWidth / 2, // Center the text box horizontally
+                          top: -textBoxHeight / 2, // Center the text box vertically
+                          fill: color,  
+                          fontSize: fontSize,
+                          // Set bold and italic using Fabric properties
+                          fontWeight: bold ? 'bold' : 'normal',
+                          fontStyle: italic ? 'italic' : 'normal',
+                          backgroundColor: backgroundColor,
+                          width: textBoxWidth,
+                          height: textBoxHeight,
+                          splitByGrapheme: true, // Better text wrapping
+                          textAlign: alignment,
+                          // Disable scaling for text object
+                          lockScalingX: true,
+                          lockScalingY: true,
+                          lockUniScaling: true,
+                          hasControls: false, // Hide controls on individual text object
+                          hasBorders: false,  // Hide borders on individual text object
+                          editable: true,
+                          selectable: false // Will be selected via group
+                      });
+                      
+                      // Create rectangular outline
+                      const outline = new Rect({
+                          left: -textBoxWidth / 2,  // Center the outline horizontally
+                          top: -textBoxHeight / 2,  // Center the outline vertically
+                          width: textBoxWidth,
+                          height: textBoxHeight,
+                          fill: 'transparent',
+                          stroke: borderColor,
+                          strokeWidth: 1,
+                          selectable: false,
+                          evented: false // Don't respond to events
+                      });
+                      
+                      // Create group with outline and text
+                      const textGroup = new Group([textObj, outline], {
+                          left: pointer.x,
+                          top: pointer.y,
+                          width: textBoxWidth,  // Set initial width to match outline
+                          height: textBoxHeight, // Set initial height to match outline
+                          // Scaling properties for the group
+                          lockScalingFlip: false,
+                          lockUniScaling: false,
+                          lockScalingX: false,
+                          lockScalingY: false,
+                          // Control properties
+                          cornerSize: 10,
+                          cornerStyle: 'rect',
+                          hasControls: true,
+                          hasBorders: true,
+                          borderColor: 'rgba(178,204,255,0.8)',
+                          cornerColor: 'rgba(178,204,255,0.8)',
+                          // Enable all resize handles
+                          setControlsVisibility: {
+                              mt: true, // middle top - vertical resizing
+                              mb: true, // middle bottom - vertical resizing  
+                              ml: true, // middle left - horizontal resizing
+                              mr: true, // middle right - horizontal resizing
+                              bl: true, // bottom left - corner resizing
+                              br: true, // bottom right - corner resizing
+                              tl: true, // top left - corner resizing
+                              tr: true, // top right - corner resizing
+                              mtr: true // rotation handle
+                          }
+                      });
+                      
+                      // Store references for easy access
+                      textGroup.textObj = textObj;
+                      textGroup.outline = outline;
+                      textGroup.originalFontSize = fontSize;
+                      textGroup.isTextGroup = true; // Mark as text group for identification
+                      
+                      canvas.add(textGroup);
+                      canvas.setActiveObject(textGroup);
+                      
+                      // Enter editing mode for the text
+                      textObj.enterEditing();
+                      textObj.selectAll();
+
+                      setCursorMode('default');
+                      canvas.hoverCursor = 'default';
+                      break;
+                  }
+                  case 'line': {
+                      if (initClickX === null || initClickY === null) {
+                          setInitClickX(pointer.x);
+                          setInitClickY(pointer.y);
+                          if (pointer.x < 0 || pointer.y < 0) {
+                              // Reset if the initial click was outside the canvas
+                              setInitClickX(null);
+                              setInitClickY(null);
+                              setCursorMode('default');
+                              canvas.hoverCursor = 'default';
+                              return;
+                          }
+                          break;
+                      } else {
+                          if (Math.abs(initClickY - pointer.y) < 10) {
+                              setInitClickY(pointer.y);
+                          }
+                          if (Math.abs(initClickX - pointer.x) < 10) {
+                              setInitClickX(pointer.x);
+                          }
+                          const line = new Line([initClickX, initClickY, pointer.x, pointer.y], {
+                              stroke: borderColor, // use current border color; existing objects remain unchanged
+                              strokeWidth: borderWidth,
+                          });
+                          canvas.add(line);
+                          canvas.setActiveObject(line);
+
+                          setCursorMode('default');
+                          canvas.hoverCursor = 'default';
+                          setInitClickX(null);
+                          setInitClickY(null);
+                          break;
+                      }
+                  }
+                  default:
+                      break;
+              }
+          };
+
+          canvas.on('mouse:down', handleCanvasClick);
+          // Cleanup on component unmount or when canvas/mode changes
+          return () => canvas.off('mouse:down', handleCanvasClick);
+      }
+  }, [canvas, cursorMode, color, borderColor, bold, italic]);
+
+  // Handlers to change modes
+  function handleWrite() {
+      if (canvas) {
+          setCursorMode('text');
+          document.getElementById('options-bar').style.display = 'flex';
+          document.getElementById('text-color-picker').style.display = 'block';
+          canvas.hoverCursor = 'text';
+      }
+  }
+
+  function handleLine() {
+      if (canvas) {
+          setCursorMode('line');
+          document.getElementById('options-bar').style.display = 'flex';
+          document.getElementById('text-color-picker').style.display = 'none';
+          canvas.hoverCursor = 'pointer';
+      }
+  }
+
+  function BoldButton() {
+      if (canvas) {
+          canvas.hoverCursor = bold ? 'text' : 'pointer';
+          return (
+              <button style={{ fontWeight: bold ? 'bold' : 'normal' }} onClick={() => setBold(!bold)} id = "bold-button">
+                  B
+              </button>
+          );
+      }
+      return null;
+  }
+
+  function ItalicButton() {
+      if (canvas) {
+          canvas.hoverCursor = italic ? 'text' : 'pointer';
+          return (
+              <button style={{ fontWeight: italic ? 'bold' : 'normal', fontStyle: 'italic' }} onClick={() => setItalic(!italic)} id = "italic-button">
+                  I
+              </button>
+          );
+      }
+      return null;
+  }
+
+  return (
+      <div id="pdf-editor">
+          <div id="toolbar">
+              <button className='toolbar-button' onClick={handleWrite}>write</button>
+              <button className='toolbar-button' onClick={handleLine}>line</button>
+              <button className='toolbar-button' onClick={() => setCursorMode('default')}>default</button>
+              <button className='toolbar-button' onClick={() => canvas && canvas.clear()}>clear</button>
+              <button className='toolbar-button' onClick={() => canvas && canvas.discardActiveObject()}>delete</button>
+          </div>
+          <div id='canvas-container'>
+              <div id='options-bar'>
+                  <div id='text-color-picker' style={{ position: 'relative', display: 'inline-block', border: '1px solid var(--hue6)', width: '30px', height: '30px', margin: '10px', cursor: 'pointer', borderRadius: '5px'}}
+                      onMouseEnter={() => setShowColorPicker(true)}
+                      onMouseLeave={() => setShowColorPicker(false)}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', pointerEvents: 'none' }}>
+                          A
+                          <div style={{width:'20px', height:'5px', borderRadius: '2px', backgroundColor: color}}/>
+                      </div> 
+                      {showColorPicker && (
+                          <div style={{ position: 'absolute', zIndex: 100, top: '100%', left: 0 }}>
+                              <ChromePicker
+                                  color={color}
+                                  onChangeComplete={(newColor) => setColor(newColor.hex)}
+                              />
+                          </div>
+                      )}
+                  </div>
+                  <div id='border-color-picker' style={{ position: 'relative', display: 'inline-block', margin: '10px' }}
+                      onMouseEnter={() => setShowBorderColorPicker(true)}
+                      onMouseLeave={() => setShowBorderColorPicker(false)}>
+                      border color
+                      {showBorderColorPicker && (
+                          <div style={{ position: 'absolute', zIndex: 100, top: '100%', left: 0 }}>
+                              <div style={{ backgroundColor: 'white', padding: '10px', borderRadius: '5px', boxShadow: '0 2px 10px rgba(0,0,0,0.2)' }}>
+                                  <button 
+                                      style={{ 
+                                        display: 'flex',
+                                        width: '100%',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                        verticalAlign: 'middle',
+                                        height: '30px', 
+                                        marginBottom: '10px', 
+                                        border: '1px solid #ccc', 
+                                        borderRadius: '3px',
+                                        backgroundSize: '10px 10px',
+                                        backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0px',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        fontWeight: 'bold',
+                                        color: '#333'
+                                      }}
+                                      onClick={() => setBorderColor('transparent')}
+                                  >
+                                      Transparent
+                                  </button>
+                                  <ChromePicker
+                                      color={borderColor === 'transparent' ? '#000000' : borderColor}
+                                      onChangeComplete={(newColor) => setBorderColor(newColor.hex)}
+                                  />
+                              </div>
+                          </div>
+                      )}
+                  </div>
+                  <BoldButton />
+                  <ItalicButton />
+                  <input type="number" value={fontSize} onChange={(e) => setFontSize(e.target.value)} />
+              </div>
+              <canvas id="fabricCanvas" width={window.innerWidth} height="600" style={{ border: 'solid 1px black' }} ref={canvasRef}></canvas>
+          </div>
+      </div>
+  );
+}
+
+export { PdfEditor };   

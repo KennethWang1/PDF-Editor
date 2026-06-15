@@ -1,0 +1,84 @@
+#dashboard-header {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--primary100);
+    height:5vh;
+    width:95vw;
+    top:2vh;
+    left:2.5vw;
+    border-radius: 20px;
+    border-width: 1px;
+    border-color: var(--primary400);
+    border-style: solid;
+}
+
+.dashboard-headers {
+    position: relative;
+    display: block;
+    color: var(--hue950);
+    margin: 0 5vw; /* Increased margin to add more space between headers */
+    cursor: pointer;
+
+}
+
+a {
+    color: var(--hue950);
+}
+
+#username{
+    position: absolute;
+    right: 0;
+    color: var(--hue950);
+}
+
+#sidebar{
+    position: fixed;
+    right:0;
+    background-color: var(--hue50);
+    width:20vw;
+    height: 100vh;
+    top:0vh;
+    border-width: 0px;
+    border-left: 1px;
+    border-color: var(--hue950);
+    border-style: solid;
+    text-align: center;
+}
+
+.sidebar-headers {
+    position: relative;
+    display: block;
+    color: var(--hue950);
+    margin: 3vh 0; /* Increased margin to add more space between headers */
+    cursor: pointer;
+    padding: 1vw;
+    width:18vw;
+}
+
+h3{
+    color:var(--hue800);
+}
+
+#main-body {
+    position: fixed;
+    display: block;
+    left: 3vw;
+    border: 1px solid var(--hue400);
+    border-radius: 10px;
+    width: 94vw;
+    height: 85vh;
+    bottom: 5vh;
+    overflow: hidden;
+    top: 60px; /* Adjust top position to account for the fixed toolbar */
+}
+
+.edit-bar-icon {
+    background-color: var(--primary300); /* Change icon background color */
+    transition: background-color 0.3s; /* Add transition for hover effect */
+}
+
+.edit-bar-icon:hover {
+    background-color: var(--primary400); /* Change icon background color on hover */
+}

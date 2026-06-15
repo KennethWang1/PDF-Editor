@@ -1,0 +1,89 @@
+canvas{
+    position: absolute;
+    width: auto;
+    height: auto;
+    top:0px;
+    left:100px;
+    display: block;
+}
+
+#button-col{
+    position: relative;
+    top: 0px;
+    left: 0px;
+    width: 200px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    height: auto;
+}
+
+.chrome-picker{
+    position: relative;
+    width:100px;
+    z-index: 100;
+    left:0;
+    display: block;
+    align-self: flex-end;
+}
+
+input{
+    width: 100px;
+}
+
+#document_background{
+    z-index: 1;
+}
+
+#document_foreground{
+    z-index: 2;
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+#type_select{
+    position: relative;
+    z-index: 3;
+    top: 10px;
+    left: 10px;
+    width: 20px;
+    height: 5px;
+    background-color: var(--hue950);
+    z-index: 300;
+}
+
+#options-bar {
+    display: none;
+    justify-content: center;
+    padding: 10px;
+    flex-direction: column;
+    width: 70px;
+    align-items:normal;
+}
+
+#toolbar {
+    display: flex;
+    justify-content: center;
+    padding: 10px;
+    background-color: var(--hue200);
+    border-bottom: 1px solid var(--hue400);
+    color: var(--hue950);
+    z-index: 101; /* Ensure the toolbar is above other content */
+    width: 100%; /* Make it span the full width */
+    position: relative; /* Fix the toolbar at the top */
+    top: 0; /* Align it to the top */
+}
+
+.toolbar-button {
+    margin: 0 5px;
+    padding: 10px 20px;
+    background-color: var(--hue50);
+    border: none;
+    border-radius: 5px;
+    color: var(--hue950);
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.toolbar-button:hover {
+    background-color: var(--primary400);
+}
