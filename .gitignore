@@ -48,7 +48,10 @@ secrets/
 /coverage
 *.lcov
 .nyc_output
-/scripts/
+/scripts
+*.cmd
+docker-compose.yml
+dockerfile
 
 # Production builds
 /build
