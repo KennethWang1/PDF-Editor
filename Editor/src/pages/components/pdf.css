@@ -87,3 +87,17 @@ input{
 .toolbar-button:hover {
     background-color: var(--primary400);
 }
+
+div[contenteditable="true"] b,
+div[contenteditable="true"] strong,
+div[contenteditable="true"] b *,
+div[contenteditable="true"] strong * {
+  font-weight: bold !important;
+}
+
+div[contenteditable="true"] i,
+div[contenteditable="true"] em,
+div[contenteditable="true"] i *,
+div[contenteditable="true"] em * {
+  font-style: italic !important;
+}
