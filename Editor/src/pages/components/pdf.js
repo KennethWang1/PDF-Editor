@@ -1026,12 +1026,6 @@ function RenderPDFEditor() {
     redrawScene(true);
   };
 
-  const handleLoadClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
   const handleFileChange = (event) => {
     const fileObj = event.target.files && event.target.files[0];
     if (!fileObj) return;
@@ -1271,7 +1265,6 @@ function RenderPDFEditor() {
       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" style={{ display: 'none' }} />
       <header id="toolbar" style={{ position: 'relative', zIndex: 20, display: 'flex', gap: '15px', alignItems: 'center', justifyContent: 'center' }}>
         <button className="toolbar-button" onClick={handleSave}>Save</button>
-        <button className="toolbar-button" onClick={handleLoadClick}>Load</button>
         <div style={{ height: '20px', width: '1px', backgroundColor: '#ccc' }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
           <label style={{ fontSize: '12px' }}>Font:</label>
