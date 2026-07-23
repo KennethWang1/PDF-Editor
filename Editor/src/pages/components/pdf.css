@@ -1,12 +1,9 @@
-/* pdf.css */
-canvas {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    top: 0px;
-    left: 0px;
-    display: block;
-    border:#c8c8c8 2px solid;
+canvas[id^="document_background_"],
+canvas[id^="document_foreground_"] {
+  border: none !important;
+  outline: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 #button-col {
