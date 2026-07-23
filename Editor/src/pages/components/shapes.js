@@ -41,6 +41,7 @@ function rotateOffset(offset, angle) {
   };
 }
 
+/*
 function stripHtmlTags(html) {
   if (typeof document === 'undefined') return html;
   const div = document.createElement("div");
@@ -51,6 +52,7 @@ function stripHtmlTags(html) {
   div.innerHTML = formattedHtml;
   return div.textContent || div.innerText || "";
 }
+*/
 
 function applyTextTransform(text, transform) {
   if (!text || !transform || transform === 'none') return text;
@@ -198,7 +200,7 @@ function renderRichText(
   }
 
   const totalHeight = lines.length * lineHeight;
-  const effectiveBoxHeight = boxHeight != null ? boxHeight : totalHeight;
+  const effectiveBoxHeight = boxHeight !== null ? boxHeight : totalHeight;
   let startY = y;
 
   if (vAlign === "bottom") {
@@ -389,7 +391,7 @@ function getRichTextLinkAtPoint(
   }
 
   const totalHeight = lines.length * lineHeight;
-  const effectiveBoxHeight = boxHeight != null ? boxHeight : totalHeight;
+  const effectiveBoxHeight = boxHeight !== null ? boxHeight : totalHeight;
   let startY = y;
 
   if (vAlign === "bottom") {
@@ -528,7 +530,7 @@ class shape {
       lineHeight: this.lineHeight || 1.2,
       isStrikethrough: this.isStrikethrough || false,
       textTransform: this.textTransform || "none",
-      padding: this.padding != null ? this.padding : 5
+      padding: this.padding !== null ? this.padding : 5
     };
   }
 
@@ -716,7 +718,7 @@ class line extends shape {
     contextCanvas.lineTo(this.location[1].x, this.location[1].y);
     contextCanvas.stroke();
 
-    if(!this.isEditingText && this.text !== null && (this.textSize !== null && this.textSize != 0)){
+    if(!this.isEditingText && this.text !== null && (this.textSize !== null && this.textSize !== 0)){
       const dx = this.location[1].x - this.location[0].x;
       const dy = this.location[1].y - this.location[0].y;
       const angle = Math.atan2(dy, dx);
@@ -930,13 +932,13 @@ class rectangle extends shape {
       drawBorderWidth = 1;
     }
 
-    if(drawBorderWidth > 0 && drawBorderWidth != null){
+    if(drawBorderWidth > 0 && drawBorderWidth !== null){
       contextCanvas.strokeStyle = drawBorderColor;
       contextCanvas.lineWidth = drawBorderWidth;
       contextCanvas.strokeRect(-width / 2, -height / 2, width, height);
     }
 
-    if(!this.isEditingText && this.text !== null && (this.textSize !== null && this.textSize != 0)){
+    if(!this.isEditingText && this.text !== null && (this.textSize !== null && this.textSize !== 0)){
       const opts = this.getFormattingOptions();
       const padding = opts.padding;
       const maxTextWidth = Math.max(0, width - padding * 2);
@@ -1154,7 +1156,7 @@ class oval extends rectangle {
       contextCanvas.stroke();
     }
 
-    if(!this.isEditingText && this.text !== null && (this.textSize !== null && this.textSize != 0)){
+    if(!this.isEditingText && this.text !== null && (this.textSize !== null && this.textSize !== 0)){
       const opts = this.getFormattingOptions();
       const padding = opts.padding;
       const maxTextWidth = Math.max(0, width - padding * 2);

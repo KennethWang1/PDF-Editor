@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { line, rectangle, oval, image } from './shapes.js';
 import { jsPDF } from 'jspdf';
 
-let backgroundCanvas = null, foregroundCanvas = null, lastClick = null, shapes = [], drawType = null, selectedShape = null, selectedHandle = null, interactionMode = null, createDragged = false;
+//let backgroundCanvas = null, foregroundCanvas = null, 
+let lastClick = null, shapes = [], drawType = null, selectedShape = null, selectedHandle = null, interactionMode = null; //createDragged = false;
 const createDragThreshold = 2;
 let inlineTextInput = null, inlineTextInputWrapper = null, inlineTextShape = null;
 let syncStateCallback = null;
@@ -128,9 +129,6 @@ function toggleHtmlFormatting(htmlText, command) {
   }
   
   return result;
-}
-
-function onMount() {
 }
 
 function redrawScene(showSelectedOnForeground = true) {
@@ -447,11 +445,12 @@ function removeZeroSizeSelectedShape() {
   selectedHandle = null;
   interactionMode = null;
   lastClick = null;
-  createDragged = false;
+  //createDragged = false;
   if (syncStateCallback) syncStateCallback();
   return true;
 }
 
+/*
 function deleteSelectedShape() {
   if (selectedShape === null) return;
   removeInlineTextInput();
@@ -460,10 +459,11 @@ function deleteSelectedShape() {
   selectedHandle = null;
   interactionMode = null;
   lastClick = null;
-  createDragged = false;
+  //createDragged = false;
   if (syncStateCallback) syncStateCallback();
   redrawScene(false);
 }
+*/
 
 function mouseMoveHandler(event){
   if(selectedShape === null) return;
@@ -497,7 +497,7 @@ function mouseMoveHandler(event){
     lastClick = { x: eventX, y: eventY };
   } else if (interactionMode === "create") {
     if (Math.abs(eventX - lastClick.x) > createDragThreshold || Math.abs(eventY - lastClick.y) > createDragThreshold) {
-      createDragged = true;
+      //createDragged = true;
     }
     selectedShape.updateSecondLocation({x: eventX, y: eventY});
   } else {
@@ -578,7 +578,7 @@ function finishInteraction(){
   interactionMode = null;
   selectedHandle = null;
   lastClick = null;
-  createDragged = false;
+  //createDragged = false;
   if (syncStateCallback) syncStateCallback();
   redrawScene(true);
 }
@@ -632,28 +632,28 @@ function mouseDownHandler(event, pageIndex = 0) {
       interactionMode = "create";
       selectedShape = new line([{x: clickX, y: clickY}, {x: clickX, y: clickY}], defaultFormatting.borderColor, 1, null, defaultFormatting.textSize, defaultFormatting.textColor, defaultFormatting.fillColor, defaultFormatting.fontFamily);
       selectedShape.pageIndex = pageIndex;
-      createDragged = false;
+      //createDragged = false;
       if (syncStateCallback) syncStateCallback();
       break;
     case "rectangle":
       interactionMode = "create";
       selectedShape = new rectangle([{x: clickX, y: clickY}, {x: clickX, y: clickY}], defaultFormatting.borderColor, 1, null, defaultFormatting.textSize, defaultFormatting.textColor, defaultFormatting.fillColor, defaultFormatting.fontFamily);
       selectedShape.pageIndex = pageIndex;
-      createDragged = false;
+      //createDragged = false;
       if (syncStateCallback) syncStateCallback();
       break;
     case "oval":
       interactionMode = "create";
       selectedShape = new oval([{x: clickX, y: clickY}, {x: clickX, y: clickY}], defaultFormatting.borderColor, 1, null, defaultFormatting.textSize, defaultFormatting.textColor, defaultFormatting.fillColor, defaultFormatting.fontFamily);
       selectedShape.pageIndex = pageIndex;
-      createDragged = false;
+      //createDragged = false;
       if (syncStateCallback) syncStateCallback();
       break;
     case "textbox":
       interactionMode = "create";
       selectedShape = new rectangle([{x: clickX, y: clickY}, {x: clickX, y: clickY}], "transparent", 0, "", defaultFormatting.textSize, defaultFormatting.textColor, null, defaultFormatting.fontFamily);
       selectedShape.pageIndex = pageIndex;
-      createDragged = false;
+      //createDragged = false;
       if (syncStateCallback) syncStateCallback();
       break;
     default:
