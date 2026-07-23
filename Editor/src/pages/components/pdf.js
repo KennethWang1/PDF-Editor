@@ -8,6 +8,7 @@ let inlineTextInput = null, inlineTextInputWrapper = null, inlineTextShape = nul
 let syncStateCallback = null;
 let updateFormattingRef = null;
 let zoomLevel = 1.0;
+const MAX_PAGES = 10;
 
 let defaultFormatting = {
   textSize: 14,
@@ -97,41 +98,44 @@ function toggleHtmlFormatting(htmlText, command) {
 }
 
 function onMount() {
-  if(foregroundCanvas !== null && backgroundCanvas !== null) return; 
-  foregroundCanvas = document.getElementById("document_foreground");
-  backgroundCanvas = document.getElementById("document_background");
-  if (foregroundCanvas) foregroundCanvas = foregroundCanvas.getContext("2d");
-  if (backgroundCanvas) backgroundCanvas = backgroundCanvas.getContext("2d");
 }
 
 function redrawScene(showSelectedOnForeground = true) {
-  const canvas = document.getElementById("document_foreground");
-  if (!canvas) return;
-
   const dpr = window.devicePixelRatio || 1;
+  const foregroundCanvases = document.querySelectorAll('[id^="document_foreground_"]');
 
-  if (backgroundCanvas) backgroundCanvas.setTransform(dpr, 0, 0, dpr, 0, 0);
-  if (foregroundCanvas) foregroundCanvas.setTransform(dpr, 0, 0, dpr, 0, 0);
+  foregroundCanvases.forEach((fgCanvas) => {
+    const pageIndex = parseInt(fgCanvas.id.replace('document_foreground_', ''), 10);
+    const bgCanvas = document.getElementById(`document_background_${pageIndex}`);
 
-  const logicalWidth = canvas.width / dpr;
-  const logicalHeight = canvas.height / dpr;
+    if (!fgCanvas || !bgCanvas) return;
 
-  if (backgroundCanvas) {
-    backgroundCanvas.clearRect(0, 0, logicalWidth, logicalHeight);
-    shapes.forEach((item) => {
-      if (item !== selectedShape) {
-        item.draw(backgroundCanvas);
-      }
-    });
-  }
+    const bgCtx = bgCanvas.getContext('2d');
+    const fgCtx = fgCanvas.getContext('2d');
 
-  if (foregroundCanvas) {
-    foregroundCanvas.clearRect(0, 0, logicalWidth, logicalHeight);
-    if (showSelectedOnForeground && selectedShape !== null) {
-      selectedShape.draw(foregroundCanvas, true); 
-      selectedShape.drawHighlightBox(foregroundCanvas);
+    if (bgCtx) bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (fgCtx) fgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const logicalWidth = fgCanvas.width / dpr;
+    const logicalHeight = fgCanvas.height / dpr;
+
+    if (bgCtx) {
+      bgCtx.clearRect(0, 0, logicalWidth, logicalHeight);
+      shapes.forEach((item) => {
+        if (item !== selectedShape && (item.pageIndex || 0) === pageIndex) {
+          item.draw(bgCtx);
+        }
+      });
     }
-  }
+
+    if (fgCtx) {
+      fgCtx.clearRect(0, 0, logicalWidth, logicalHeight);
+      if (showSelectedOnForeground && selectedShape !== null && (selectedShape.pageIndex || 0) === pageIndex) {
+        selectedShape.draw(fgCtx, true);
+        selectedShape.drawHighlightBox(fgCtx);
+      }
+    }
+  });
 
   updateInlineTextInputPosition();
 }
@@ -181,7 +185,8 @@ function removeInlineTextInput() {
 function updateInlineTextInputPosition() {
   if (!inlineTextInput || !inlineTextShape) return;
 
-  const canvas = document.getElementById("document_foreground");
+  const pageIndex = inlineTextShape.pageIndex || 0;
+  const canvas = document.getElementById(`document_foreground_${pageIndex}`);
   const editor = document.getElementById("pdf-editor");
   if (!canvas || !editor) return;
 
@@ -357,12 +362,12 @@ function openInlineTextInput(shape) {
   }
 }
 
-function findNearestShapeAtPoint(point) {
+function findNearestShapeAtPoint(point, pageIndex = 0) {
   let minDist = Infinity;
   let nearestShape = null;
 
   for (let i = 0; i < shapes.length; i++) {
-    if (shapes[i].collissionCheck(point)) {
+    if ((shapes[i].pageIndex || 0) === pageIndex && shapes[i].collissionCheck(point)) {
       let dist = typeof shapes[i].distanceToPoint === 'function'
         ? shapes[i].distanceToPoint(point)
         : Infinity;
@@ -401,11 +406,27 @@ function removeZeroSizeSelectedShape() {
   return true;
 }
 
+function deleteSelectedShape() {
+  if (selectedShape === null) return;
+  removeInlineTextInput();
+  shapes = shapes.filter((item) => item !== selectedShape);
+  selectedShape = null;
+  selectedHandle = null;
+  interactionMode = null;
+  lastClick = null;
+  createDragged = false;
+  if (syncStateCallback) syncStateCallback();
+  redrawScene(false);
+}
+
 function mouseMoveHandler(event){
   if(selectedShape === null) return;
 
+  const pageIndex = selectedShape.pageIndex || 0;
+  let canvas = document.getElementById(`document_foreground_${pageIndex}`);
+  if (!canvas) return;
+
   if (interactionMode === "create-click") {
-    let canvas = document.getElementById("document_foreground");
     let rect = canvas.getBoundingClientRect();
     let eventX = (event.clientX - rect.left) / zoomLevel;
     let eventY = (event.clientY - rect.top) / zoomLevel;
@@ -415,7 +436,6 @@ function mouseMoveHandler(event){
   }
 
   if(lastClick === null) return;
-  let canvas = document.getElementById("document_foreground");
   let rect = canvas.getBoundingClientRect();
   let eventX = (event.clientX - rect.left) / zoomLevel;
   let eventY = (event.clientY - rect.top) / zoomLevel;
@@ -441,17 +461,18 @@ function mouseMoveHandler(event){
   redrawScene(true);
 }
 
-function mouseDoubleClickHandler(event) {
+function mouseDoubleClickHandler(event, pageIndex = 0) {
   if (event.button !== 0) return;
   if (interactionMode === "create" || interactionMode === "create-click") return;
 
-  let canvas = document.getElementById("document_foreground");
+  let canvas = document.getElementById(`document_foreground_${pageIndex}`);
+  if (!canvas) return;
   let rect = canvas.getBoundingClientRect();
   let clickX = (event.clientX - rect.left) / zoomLevel;
   let clickY = (event.clientY - rect.top) / zoomLevel;
   const clickPoint = { x: clickX, y: clickY };
 
-  const targetShape = findNearestShapeAtPoint(clickPoint);
+  const targetShape = findNearestShapeAtPoint(clickPoint, pageIndex);
   if (!targetShape) return;
 
   drawType = null;
@@ -463,8 +484,8 @@ function mouseDoubleClickHandler(event) {
   openInlineTextInput(targetShape);
 }
 
-function contextMenuHandler(event) {
-  const canvas = document.getElementById("document_foreground");
+function contextMenuHandler(event, pageIndex = 0) {
+  const canvas = document.getElementById(`document_foreground_${pageIndex}`);
   if (!canvas) return;
 
   let rect = canvas.getBoundingClientRect();
@@ -472,7 +493,7 @@ function contextMenuHandler(event) {
   let clickY = (event.clientY - rect.top) / zoomLevel;
   const clickPoint = { x: clickX, y: clickY };
 
-  const targetShape = findNearestShapeAtPoint(clickPoint);
+  const targetShape = findNearestShapeAtPoint(clickPoint, pageIndex);
   const url = getUrlFromShape(targetShape);
 
   if (url) {
@@ -483,11 +504,15 @@ function contextMenuHandler(event) {
 }
 
 function finishInteraction(){
-  const canvas = document.getElementById("document_foreground");
-  if (!canvas) return;
+  const pageIndex = selectedShape ? (selectedShape.pageIndex || 0) : 0;
+  const canvas = document.getElementById(`document_foreground_${pageIndex}`);
 
-  canvas.removeEventListener("mousemove", mouseMoveHandler);
-  canvas.removeEventListener("mouseup", finishInteraction);
+  if (canvas) {
+    canvas.removeEventListener("mousemove", mouseMoveHandler);
+    canvas.removeEventListener("mouseup", finishInteraction);
+  }
+  window.removeEventListener("mousemove", mouseMoveHandler);
+  window.removeEventListener("mouseup", finishInteraction);
   commitInlineTextInput();
 
   if (selectedShape != null && interactionMode === "create") {
@@ -499,7 +524,7 @@ function finishInteraction(){
     } else {
       interactionMode = "create-click";
       redrawScene(true);
-      canvas.addEventListener("mousemove", mouseMoveHandler);
+      if (canvas) canvas.addEventListener("mousemove", mouseMoveHandler);
       createDragged = false;
       lastClick = null;
       return;
@@ -520,12 +545,13 @@ function finishInteraction(){
   redrawScene(interactionMode === "edit");
 }
 
-function mouseDownHandler(event){
+function mouseDownHandler(event, pageIndex = 0){
   if (event.button !== 0) return;
 
   commitInlineTextInput();
 
-  let canvas = document.getElementById("document_foreground");
+  let canvas = document.getElementById(`document_foreground_${pageIndex}`);
+  if (!canvas) return;
   let rect = canvas.getBoundingClientRect();
   let clickX = (event.clientX - rect.left) / zoomLevel;
   let clickY = (event.clientY - rect.top) / zoomLevel;
@@ -543,33 +569,36 @@ function mouseDownHandler(event){
       if (syncStateCallback) syncStateCallback();
     }
     canvas.removeEventListener("mousemove", mouseMoveHandler);
+    window.removeEventListener("mousemove", mouseMoveHandler);
     redrawScene(interactionMode === "edit");
     return;
   }
 
   if (selectedShape !== null && interactionMode === "edit") {
-    const handle = typeof selectedShape.getHandleAtPoint === 'function'
-      ? selectedShape.getHandleAtPoint(clickPoint)
-      : null;
+    if ((selectedShape.pageIndex || 0) === pageIndex) {
+      const handle = typeof selectedShape.getHandleAtPoint === 'function'
+        ? selectedShape.getHandleAtPoint(clickPoint)
+        : null;
 
-    if (handle !== null) {
-      drawType = null;
-      interactionMode = handle === "rotate" ? "rotate" : "resize";
-      selectedHandle = handle;
-      lastClick = clickPoint;
-      canvas.addEventListener("mousemove", mouseMoveHandler);
-      canvas.addEventListener("mouseup", finishInteraction);
-      return;
-    }
+      if (handle !== null) {
+        drawType = null;
+        interactionMode = handle === "rotate" ? "rotate" : "resize";
+        selectedHandle = handle;
+        lastClick = clickPoint;
+        window.addEventListener("mousemove", mouseMoveHandler);
+        window.addEventListener("mouseup", finishInteraction);
+        return;
+      }
 
-    if (typeof selectedShape.collissionCheck === 'function' && selectedShape.collissionCheck(clickPoint)) {
-      drawType = null;
-      interactionMode = "move";
-      selectedHandle = null;
-      lastClick = clickPoint;
-      canvas.addEventListener("mousemove", mouseMoveHandler);
-      canvas.addEventListener("mouseup", finishInteraction);
-      return;
+      if (typeof selectedShape.collissionCheck === 'function' && selectedShape.collissionCheck(clickPoint)) {
+        drawType = null;
+        interactionMode = "move";
+        selectedHandle = null;
+        lastClick = clickPoint;
+        window.addEventListener("mousemove", mouseMoveHandler);
+        window.addEventListener("mouseup", finishInteraction);
+        return;
+      }
     }
   }
 
@@ -578,29 +607,33 @@ function mouseDownHandler(event){
       case "line":
         interactionMode = "create";
         selectedShape = new line([{x: clickX, y: clickY}, {x: clickX, y: clickY}], defaultFormatting.borderColor, 1, null, defaultFormatting.textSize, defaultFormatting.textColor, defaultFormatting.fillColor, "Arial");
+        selectedShape.pageIndex = pageIndex;
         createDragged = false;
         if (syncStateCallback) syncStateCallback();
         break;
       case "rectangle":
         interactionMode = "create";
         selectedShape = new rectangle([{x: clickX, y: clickY}, {x: clickX, y: clickY}], defaultFormatting.borderColor, 1, null, defaultFormatting.textSize, defaultFormatting.textColor, defaultFormatting.fillColor, "Arial");
+        selectedShape.pageIndex = pageIndex;
         createDragged = false;
         if (syncStateCallback) syncStateCallback();
         break;
       case "oval":
         interactionMode = "create";
         selectedShape = new oval([{x: clickX, y: clickY}, {x: clickX, y: clickY}], defaultFormatting.borderColor, 1, null, defaultFormatting.textSize, defaultFormatting.textColor, defaultFormatting.fillColor, "Arial");
+        selectedShape.pageIndex = pageIndex;
         createDragged = false;
         if (syncStateCallback) syncStateCallback();
         break;
       case "textbox":
         interactionMode = "create";
         selectedShape = new rectangle([{x: clickX, y: clickY}, {x: clickX, y: clickY}], "transparent", 0, "", defaultFormatting.textSize, defaultFormatting.textColor, null, "Arial");
+        selectedShape.pageIndex = pageIndex;
         createDragged = false;
         if (syncStateCallback) syncStateCallback();
         break;
       default:
-        let nearestShape = findNearestShapeAtPoint(clickPoint);
+        let nearestShape = findNearestShapeAtPoint(clickPoint, pageIndex);
         if (nearestShape) {
           drawType = null;
           interactionMode = "edit";
@@ -624,8 +657,8 @@ function mouseDownHandler(event){
 
     if (selectedShape != null) {
       lastClick = {x: clickX, y: clickY};
-      canvas.addEventListener("mousemove", mouseMoveHandler);
-      canvas.addEventListener("mouseup", finishInteraction);
+      window.addEventListener("mousemove", mouseMoveHandler);
+      window.addEventListener("mouseup", finishInteraction);
     }
   }
 }
@@ -642,7 +675,8 @@ function load(){
         textSize: null,
         color: "black",
         textFont: "Arial",
-        fillColor: null
+        fillColor: null,
+        pageIndex: 0
       },  
       {
         type: "line",
@@ -653,7 +687,8 @@ function load(){
         textSize: 20,
         color: "black",
         textFont: "Arial",
-        fillColor: null
+        fillColor: null,
+        pageIndex: 0
       },
       {
         type: "rectangle",
@@ -664,7 +699,8 @@ function load(){
         textSize: 15,
         color: "black",
         textFont: "Calibri",
-        fillColor: null
+        fillColor: null,
+        pageIndex: 0
       },
       {
         type: "oval",
@@ -675,7 +711,8 @@ function load(){
         textSize: 16,
         color: "black",
         textFont: "Arial",
-        fillColor: null
+        fillColor: null,
+        pageIndex: 0
       }
     ]
   }
@@ -699,17 +736,13 @@ function load(){
         temp = null
         break;
     }
+    if (temp) {
+      temp.pageIndex = item.pageIndex || 0;
+    }
     return temp;
   });
 
   redrawScene(false);
-
-  const canvas = document.getElementById("document_foreground");
-  if (canvas) {
-    canvas.addEventListener("mousedown", mouseDownHandler);
-    canvas.addEventListener("dblclick", mouseDoubleClickHandler);
-    canvas.addEventListener("contextmenu", contextMenuHandler);
-  }
 }
 
 function TooltipWrapper({ text, children }) {
@@ -784,6 +817,7 @@ function ColorPickerDropdown({ icon, value, onChange, allowTransparent, isOpen, 
 }
 
 function RenderPDFEditor(){
+  const [pages, setPages] = useState([0]);
   const [formatting, setFormatting] = useState(defaultFormatting);
   const [activeDropdown, setActiveDropdown] = useState(null);
   const fileInputRef = useRef(null);
@@ -825,6 +859,11 @@ function RenderPDFEditor(){
   const handleZoomIn = () => updateZoom(zoom + 0.1);
   const handleZoomOut = () => updateZoom(zoom - 0.1);
   const handleResetZoom = () => updateZoom(1.0);
+
+  const handleAddPage = () => {
+    if (pages.length >= MAX_PAGES) return;
+    setPages((prev) => [...prev, prev.length]);
+  };
 
   const handleOpenImagesModal = async () => {
     const jwt = getCookie('auth');
@@ -899,7 +938,8 @@ function RenderPDFEditor(){
   };
 
   const handleSelectImage = (imageUrl) => {
-    const canvas = document.getElementById("document_foreground");
+    const pageIndex = 0;
+    const canvas = document.getElementById(`document_foreground_${pageIndex}`);
     const cw = canvas ? canvas.width / (window.devicePixelRatio || 1) : 800;
     const ch = canvas ? canvas.height / (window.devicePixelRatio || 1) : 600;
 
@@ -912,6 +952,7 @@ function RenderPDFEditor(){
       [{ x: startX, y: startY }, { x: startX + imgWidth, y: startY + imgHeight }],
       "transparent", 0, null, null, null, null, "Arial", imageUrl
     );
+    newImgShape.pageIndex = pageIndex;
 
     newImgShape.loadImage(imageUrl, () => {
       shapes.push(newImgShape);
@@ -950,7 +991,8 @@ function RenderPDFEditor(){
       })
       .then((data) => {
         const imageUrl = data.url;
-        const canvas = document.getElementById("document_foreground");
+        const pageIndex = 0;
+        const canvas = document.getElementById(`document_foreground_${pageIndex}`);
         const cw = canvas ? canvas.width / (window.devicePixelRatio || 1) : 800;
         const ch = canvas ? canvas.height / (window.devicePixelRatio || 1) : 600;
 
@@ -970,6 +1012,7 @@ function RenderPDFEditor(){
           "Arial",
           imageUrl
         );
+        newImgShape.pageIndex = pageIndex;
 
         newImgShape.loadImage(imageUrl, () => {
           redrawScene(true);
@@ -995,6 +1038,28 @@ function RenderPDFEditor(){
   };
 
   useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const target = e.target;
+        const isInput = target && (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable
+        );
+        if (!isInput) {
+          e.preventDefault();
+          deleteSelectedShape();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
     onMount();
     load();
 
@@ -1018,14 +1083,6 @@ function RenderPDFEditor(){
     };
 
     return () => {
-      let canvas = document.getElementById("document_foreground");
-      if (canvas) {
-        canvas.removeEventListener("mousedown", mouseDownHandler);
-        canvas.removeEventListener("dblclick", mouseDoubleClickHandler);
-        canvas.removeEventListener("mousemove", mouseMoveHandler);
-        canvas.removeEventListener("mouseup", finishInteraction);
-        canvas.removeEventListener("contextmenu", contextMenuHandler);
-      }
       removeInlineTextInput();
       backgroundCanvas = null;
       foregroundCanvas = null;
@@ -1033,6 +1090,10 @@ function RenderPDFEditor(){
       updateFormattingRef = null;
     }
   }, []);
+
+  useEffect(() => {
+    redrawScene(interactionMode === "edit");
+  }, [pages]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -1166,6 +1227,7 @@ function RenderPDFEditor(){
   const dpr = window.devicePixelRatio || 1;
   const canvasWidth = dimensions.width;
   const canvasHeight = dimensions.height;
+  const isMaxPagesReached = pages.length >= MAX_PAGES;
 
   return (
     <div id="pdf-editor" style={{ display: "flex", flexDirection: "row", width: "100vw", height: "100vh", overflow: "hidden" }}>
@@ -1175,6 +1237,7 @@ function RenderPDFEditor(){
         <button onClick={() => { drawType = "rectangle"; if(interactionMode === "edit") { selectedShape = null; interactionMode = null; redrawScene(false); } }}>Rectangle</button>
         <button onClick={() => { drawType = "oval"; if(interactionMode === "edit") { selectedShape = null; interactionMode = null; redrawScene(false); } }}>Oval</button>
         <button onClick={() => { drawType = "textbox"; if(interactionMode === "edit") { selectedShape = null; interactionMode = null; redrawScene(false); } }}>Textbox</button>
+        <button onClick={deleteSelectedShape}>Delete</button>
         <input type="file" ref={fileInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleImageSelect} />
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '10px', borderTop: '1px solid #ccc', paddingTop: '10px' }}>
@@ -1389,38 +1452,70 @@ function RenderPDFEditor(){
           overflow: "auto", 
           background: "#ffffff", 
           display: "flex", 
-          justifyContent: "center", 
-          alignItems: "flex-start", 
-          padding: "40px 20px 90px 20px", 
+          flexDirection: "column",
+          alignItems: "center", 
+          gap: "24px",
+          padding: "40px 20px 80px 20px", 
           boxSizing: "border-box" 
         }}
       >
-        <div style={{ position: "relative", width: `${canvasWidth * zoom}px`, height: `${canvasHeight * zoom}px`, flexShrink: 0 }}>
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              width: `${canvasWidth}px`,
-              height: `${canvasHeight}px`,
-              transform: `scale(${zoom})`,
-              transformOrigin: "0 0"
+        {pages.map((pageIdx) => (
+          <div 
+            key={pageIdx} 
+            style={{ 
+              position: "relative", 
+              width: `${canvasWidth * zoom}px`, 
+              height: `${canvasHeight * zoom}px`, 
+              flexShrink: 0 
             }}
           >
-            <canvas 
-              id="document_background" 
-              width={canvasWidth * dpr} 
-              height={canvasHeight * dpr}
-              style={{ position: "absolute", left: 0, top: 0, width: `${canvasWidth}px`, height: `${canvasHeight}px` }}
-            />
-            <canvas 
-              id="document_foreground" 
-              width={canvasWidth * dpr} 
-              height={canvasHeight * dpr}
-              style={{ position: "absolute", left: 0, top: 0, width: `${canvasWidth}px`, height: `${canvasHeight}px` }}
-            />
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: `${canvasWidth}px`,
+                height: `${canvasHeight}px`,
+                transform: `scale(${zoom})`,
+                transformOrigin: "0 0"
+              }}
+            >
+              <canvas 
+                id={`document_background_${pageIdx}`}
+                width={canvasWidth * dpr} 
+                height={canvasHeight * dpr}
+                style={{ position: "absolute", left: 0, top: 0, width: `${canvasWidth}px`, height: `${canvasHeight}px` }}
+              />
+              <canvas 
+                id={`document_foreground_${pageIdx}`}
+                width={canvasWidth * dpr} 
+                height={canvasHeight * dpr}
+                onMouseDown={(e) => mouseDownHandler(e, pageIdx)}
+                onDoubleClick={(e) => mouseDoubleClickHandler(e, pageIdx)}
+                onContextMenu={(e) => contextMenuHandler(e, pageIdx)}
+                style={{ position: "absolute", left: 0, top: 0, width: `${canvasWidth}px`, height: `${canvasHeight}px` }}
+              />
+            </div>
           </div>
-        </div>
+        ))}
+
+        <button
+          onClick={handleAddPage}
+          disabled={isMaxPagesReached}
+          style={{
+            backgroundColor: isMaxPagesReached ? "#e2e8f0" : "#007bff",
+            color: isMaxPagesReached ? "#a0aec0" : "#ffffff",
+            border: isMaxPagesReached ? "1px solid #a0aec0" : "none",
+            borderRadius: "4px",
+            padding: "10px 20px",
+            fontWeight: "bold",
+            cursor: isMaxPagesReached ? "not-allowed" : "pointer",
+            opacity: isMaxPagesReached ? 0.5 : 1,
+            flexShrink: 0
+          }}
+        >
+          + Add Page
+        </button>
 
         <div style={{
           position: "fixed",

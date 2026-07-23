@@ -5,6 +5,7 @@ canvas {
     top: 0px;
     left: 0px;
     display: block;
+    border:#c8c8c8 2px solid;
 }
 
 #button-col {
