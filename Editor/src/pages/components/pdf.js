@@ -18,7 +18,14 @@ let defaultFormatting = {
   isUnderline: false,
   textColor: "#000000",
   borderColor: "#000000",
-  fillColor: null
+  fillColor: null,
+  textAlign: "left",
+  verticalAlign: "top",
+  letterSpacing: 0,
+  lineHeight: 1.2,
+  isStrikethrough: false,
+  textTransform: "none",
+  padding: 5
 };
 
 function getCookie(name) {
@@ -211,8 +218,10 @@ function updateInlineTextInputPosition() {
   if (inlineTextInput) {
     const scaledFontSize = (inlineTextShape.textSize || 14) * zoomLevel;
     inlineTextInput.style.fontSize = `${scaledFontSize}px`;
-    const calculatedLineHeight = Math.max(12 * zoomLevel, Math.ceil(scaledFontSize * 1.2));
+    const calculatedLineHeight = Math.max(12 * zoomLevel, Math.ceil(scaledFontSize * (inlineTextShape.lineHeight || 1.2)));
     inlineTextInput.style.lineHeight = `${calculatedLineHeight}px`;
+    inlineTextInput.style.letterSpacing = `${(inlineTextShape.letterSpacing || 0) * zoomLevel}px`;
+    inlineTextInput.style.textTransform = inlineTextShape.textTransform || 'none';
   }
 
   if (inlineTextInputWrapper) {
@@ -264,8 +273,10 @@ function openInlineTextInput(shape) {
   input.style.fontSize = `${scaledFontSize}px`;
   input.style.fontFamily = shape.textFont;
 
-  const calculatedLineHeight = Math.max(12 * zoomLevel, Math.ceil(scaledFontSize * 1.2));
+  const calculatedLineHeight = Math.max(12 * zoomLevel, Math.ceil(scaledFontSize * (shape.lineHeight || 1.2)));
   input.style.lineHeight = `${calculatedLineHeight}px`;
+  input.style.letterSpacing = `${(shape.letterSpacing || 0) * zoomLevel}px`;
+  input.style.textTransform = shape.textTransform || 'none';
   input.style.color = shape.color;
   input.style.border = "1px dashed blue";
   input.style.background = "transparent";
@@ -480,7 +491,6 @@ function mouseDoubleClickHandler(event, pageIndex = 0) {
   selectedShape = targetShape;
   selectedHandle = null;
   interactionMode = "edit";
-
   if (syncStateCallback) syncStateCallback();
   redrawScene(true);
   openInlineTextInput(targetShape);
@@ -496,8 +506,8 @@ function contextMenuHandler(event, pageIndex = 0) {
 
   const clickPoint = { x: clickX, y: clickY };
   const targetShape = findNearestShapeAtPoint(clickPoint, pageIndex);
-
   const url = getUrlFromShape(targetShape);
+
   if (url) {
     event.preventDefault();
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -539,11 +549,10 @@ function finishInteraction(){
     }
   }
 
-  lastClick = null;
-  selectedHandle = null;
   interactionMode = null;
+  selectedHandle = null;
+  lastClick = null;
   createDragged = false;
-
   if (syncStateCallback) syncStateCallback();
   redrawScene(true);
 }
@@ -552,160 +561,133 @@ function mouseDownHandler(event, pageIndex = 0){
   let canvas = document.getElementById(`document_foreground_${pageIndex}`);
   if (!canvas) return;
 
+  if (event.button !== 0) return;
+
   let rect = canvas.getBoundingClientRect();
   let clickX = (event.clientX - rect.left) / zoomLevel;
   let clickY = (event.clientY - rect.top) / zoomLevel;
+  const clickPoint = { x: clickX, y: clickY };
 
-  if (event.button === 0) {
-    if (inlineTextInput) {
-      const inlineRect = inlineTextInput.getBoundingClientRect();
-      if (
-        event.clientX >= inlineRect.left &&
-        event.clientX <= inlineRect.right &&
-        event.clientY >= inlineRect.top &&
-        event.clientY <= inlineRect.bottom
-      ) {
-        return;
+  if (interactionMode === "create-click" && selectedShape) {
+    finishInteraction();
+    return;
+  }
+
+  commitInlineTextInput();
+
+  lastClick = { x: clickX, y: clickY };
+
+  if (selectedShape !== null && (selectedShape.pageIndex || 0) === pageIndex) {
+    const handle = selectedShape.getHandleAtPoint(clickPoint);
+    if (handle !== null) {
+      if (handle === "rotate") {
+        interactionMode = "rotate";
+      } else {
+        interactionMode = "resize";
+        selectedHandle = handle;
       }
-    }
-
-    if (interactionMode === "create-click") {
-      finishInteraction();
+      canvas.addEventListener("mousemove", mouseMoveHandler);
+      canvas.addEventListener("mouseup", finishInteraction);
+      window.addEventListener("mousemove", mouseMoveHandler);
+      window.addEventListener("mouseup", finishInteraction);
       return;
     }
-
-    commitInlineTextInput();
-
-    if (drawType !== null) {
-      selectedShape = null;
-      selectedHandle = null;
-      interactionMode = null;
-    }
-
-    if (selectedShape !== null && (selectedShape.pageIndex || 0) === pageIndex) {
-      const handle = selectedShape.getHandleAtPoint({x: clickX, y: clickY});
-      if (handle !== null) {
-        selectedHandle = handle;
-        if (handle === "rotate") {
-          interactionMode = "rotate";
-        } else {
-          interactionMode = "resize";
-        }
-        lastClick = { x: clickX, y: clickY };
-        canvas.addEventListener("mousemove", mouseMoveHandler);
-        canvas.addEventListener("mouseup", finishInteraction);
-        window.addEventListener("mousemove", mouseMoveHandler);
-        window.addEventListener("mouseup", finishInteraction);
-        redrawScene(true);
-        if (syncStateCallback) syncStateCallback();
-        return;
-      }
-    }
-
-    const clickPoint = { x: clickX, y: clickY };
-
-    if (lastClick === null){
-      switch(drawType){
-        case "line":
-          interactionMode = "create";
-          selectedShape = new line([{x: clickX, y: clickY}, {x: clickX, y: clickY}], defaultFormatting.borderColor, 1, null, defaultFormatting.textSize, defaultFormatting.textColor, defaultFormatting.fillColor, defaultFormatting.fontFamily);
-          selectedShape.pageIndex = pageIndex;
-          createDragged = false;
-          if (syncStateCallback) syncStateCallback();
-          break;
-        case "rectangle":
-          interactionMode = "create";
-          selectedShape = new rectangle([{x: clickX, y: clickY}, {x: clickX, y: clickY}], defaultFormatting.borderColor, 1, null, defaultFormatting.textSize, defaultFormatting.textColor, defaultFormatting.fillColor, defaultFormatting.fontFamily);
-          selectedShape.pageIndex = pageIndex;
-          createDragged = false;
-          if (syncStateCallback) syncStateCallback();
-          break;
-        case "oval":
-          interactionMode = "create";
-          selectedShape = new oval([{x: clickX, y: clickY}, {x: clickX, y: clickY}], defaultFormatting.borderColor, 1, null, defaultFormatting.textSize, defaultFormatting.textColor, defaultFormatting.fillColor, defaultFormatting.fontFamily);
-          selectedShape.pageIndex = pageIndex;
-          createDragged = false;
-          if (syncStateCallback) syncStateCallback();
-          break;
-        case "textbox":
-          interactionMode = "create";
-          selectedShape = new rectangle([{x: clickX, y: clickY}, {x: clickX, y: clickY}], "transparent", 0, "", defaultFormatting.textSize, defaultFormatting.textColor, null, defaultFormatting.fontFamily);
-          selectedShape.pageIndex = pageIndex;
-          createDragged = false;
-          if (syncStateCallback) syncStateCallback();
-          break;
-        default:
-          const targetShape = findNearestShapeAtPoint(clickPoint, pageIndex);
-          if (targetShape) {
-            selectedShape = targetShape;
-            interactionMode = "move";
-          } else {
-            selectedShape = null;
-            interactionMode = null;
-          }
-          if (syncStateCallback) syncStateCallback();
-          break;
-      }
-    }
-
-    lastClick = { x: clickX, y: clickY };
-    canvas.addEventListener("mousemove", mouseMoveHandler);
-    canvas.addEventListener("mouseup", finishInteraction);
-    window.addEventListener("mousemove", mouseMoveHandler);
-    window.addEventListener("mouseup", finishInteraction);
-
-    redrawScene(true);
   }
+
+  switch(drawType) {
+    case "line":
+      interactionMode = "create";
+      selectedShape = new line([{x: clickX, y: clickY}, {x: clickX, y: clickY}], defaultFormatting.borderColor, 1, null, defaultFormatting.textSize, defaultFormatting.textColor, defaultFormatting.fillColor, defaultFormatting.fontFamily);
+      selectedShape.pageIndex = pageIndex;
+      createDragged = false;
+      if (syncStateCallback) syncStateCallback();
+      break;
+    case "rectangle":
+      interactionMode = "create";
+      selectedShape = new rectangle([{x: clickX, y: clickY}, {x: clickX, y: clickY}], defaultFormatting.borderColor, 1, null, defaultFormatting.textSize, defaultFormatting.textColor, defaultFormatting.fillColor, defaultFormatting.fontFamily);
+      selectedShape.pageIndex = pageIndex;
+      createDragged = false;
+      if (syncStateCallback) syncStateCallback();
+      break;
+    case "oval":
+      interactionMode = "create";
+      selectedShape = new oval([{x: clickX, y: clickY}, {x: clickX, y: clickY}], defaultFormatting.borderColor, 1, null, defaultFormatting.textSize, defaultFormatting.textColor, defaultFormatting.fillColor, defaultFormatting.fontFamily);
+      selectedShape.pageIndex = pageIndex;
+      createDragged = false;
+      if (syncStateCallback) syncStateCallback();
+      break;
+    case "textbox":
+      interactionMode = "create";
+      selectedShape = new rectangle([{x: clickX, y: clickY}, {x: clickX, y: clickY}], "transparent", 0, "", defaultFormatting.textSize, defaultFormatting.textColor, null, defaultFormatting.fontFamily);
+      selectedShape.pageIndex = pageIndex;
+      createDragged = false;
+      if (syncStateCallback) syncStateCallback();
+      break;
+    default:
+      const targetShape = findNearestShapeAtPoint(clickPoint, pageIndex);
+      if (targetShape) {
+        selectedShape = targetShape;
+        interactionMode = "move";
+        if (syncStateCallback) syncStateCallback();
+      } else {
+        selectedShape = null;
+        interactionMode = null;
+        if (syncStateCallback) syncStateCallback();
+      }
+      break;
+  }
+
+  canvas.addEventListener("mousemove", mouseMoveHandler);
+  canvas.addEventListener("mouseup", finishInteraction);
+  window.addEventListener("mousemove", mouseMoveHandler);
+  window.addEventListener("mouseup", finishInteraction);
+  redrawScene(true);
 }
 
-function ColorPickerDropdown({ icon, value, onChange, allowTransparent = false, isOpen, onToggle }) {
-  const dropdownRef = useRef(null);
+function CustomColorPicker({ value, onChange, allowTransparent = false, isOpen, onToggle }) {
   const colors = [
     "#000000", "#434343", "#666666", "#999999", "#b7b7b7", "#cccccc", "#d9d9d9", "#efefef", "#f3f3f3", "#ffffff",
     "#980000", "#ff0000", "#ff9900", "#ffff00", "#00ff00", "#00ffff", "#4a86e8", "#0000ff", "#9900ff", "#ff00ff",
     "#e6b8af", "#f4ccd0", "#fce5cd", "#fff2cc", "#d9ead3", "#d0e0e3", "#c9daf8", "#cfe2f3", "#d9d2e9", "#ead1dc",
-    "#dd7e6b", "#ea9999", "#f9cb9c", "#ffe599", "#b6d7a8", "#a2c4c9", "#a4c2f4", "#9fc5e8", "#b4a7d6", "#d5a6bd",
-    "#cc4125", "#e06666", "#f6b26b", "#ffd966", "#93c47d", "#76a5af", "#6fa8dc", "#6fa8dc", "#8e7cc3", "#c27ba0",
-    "#a61c1c", "#cc0000", "#e69138", "#f1c232", "#6aa84f", "#45818e", "#3d85c6", "#0b5394", "#351c75", "#741b47"
+    "#dd7e6b", "#ea9999", "#f9cb9c", "#ffe599", "#b6d7a8", "#a2c4c9", "#9fc5e8", "#8e7cc3", "#c27ba0", "#a64d79"
   ];
 
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        if (isOpen) onToggle();
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen, onToggle]);
-
   return (
-    <div ref={dropdownRef} style={{ position: "relative", display: "inline-block" }}>
+    <div style={{ position: "relative", display: "inline-block" }}>
       <button
-        className="toolbar-button"
         onClick={onToggle}
-        style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2px 6px" }}
+        style={{
+          width: "24px",
+          height: "24px",
+          backgroundColor: value === "transparent" || !value ? "#fff" : value,
+          border: "1px solid #ccc",
+          borderRadius: "4px",
+          cursor: "pointer",
+          position: "relative",
+          overflow: "hidden"
+        }}
       >
-        <span style={{ fontSize: "12px", lineHeight: "1" }}>{icon}</span>
-        <div style={{ width: "14px", height: "3px", backgroundColor: value === "transparent" || !value ? "#ccc" : value, marginTop: "2px", border: "1px solid #999" }} />
+        {(value === "transparent" || !value) && (
+          <div style={{
+            position: "absolute",
+            top: "50%",
+            left: "-20%",
+            width: "140%",
+            height: "1.5px",
+            backgroundColor: "red",
+            transform: "rotate(-45deg)"
+          }} />
+        )}
       </button>
 
       {isOpen && (
-        <div style={{
-          position: "absolute",
-          top: "100%",
-          left: 0,
-          zIndex: 1000,
-          backgroundColor: "#fff",
-          border: "1px solid #ccc",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-          padding: "8px",
-          borderRadius: "4px",
-          width: "170px"
-        }}>
+        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 1000, backgroundColor: "#fff", border: "1px solid #ccc", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", padding: "8px", borderRadius: "4px", width: "170px" }}>
           {allowTransparent && (
             <button
-              onClick={() => { onChange("transparent"); onToggle(); }}
+              onClick={() => {
+                onChange("transparent");
+                onToggle();
+              }}
               style={{ width: "100%", padding: "4px", marginBottom: "6px", fontSize: "11px", cursor: "pointer", background: "#f0f0f0", border: "1px solid #ccc", borderRadius: "3px" }}
             >
               No Color (Transparent)
@@ -715,7 +697,10 @@ function ColorPickerDropdown({ icon, value, onChange, allowTransparent = false, 
             {colors.map((c, i) => (
               <div
                 key={i}
-                onClick={() => { onChange(c); onToggle(); }}
+                onClick={() => {
+                  onChange(c);
+                  onToggle();
+                }}
                 style={{
                   width: "12px",
                   height: "12px",
@@ -738,44 +723,112 @@ function RenderPDFEditor() {
   const [activeTool, setActiveTool] = useState(null);
   const [formatting, setFormatting] = useState(defaultFormatting);
   const [activeDropdown, setActiveDropdown] = useState(null);
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
   const fileInputRef = useRef(null);
   const viewportRef = useRef(null);
-  const [zoom, setZoom] = useState(1.0);
   const zoomRef = useRef(1.0);
-  const [dimensions, setDimensions] = useState({ width: 816, height: 1056 });
+
   const [showImagesModal, setShowImagesModal] = useState(false);
   const [userImages, setUserImages] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
 
-  const getAuthTokenHeader = () => {
-    const getCookie = (name) => {
-      if (typeof document === 'undefined') return null;
-      const value = `; ${document.cookie}`;
-      const parts = value.split(`; ${name}=`);
-      if (parts.length === 2) return parts.pop().split(';').shift();
-      return null;
-    };
-    const auth = getCookie('auth') || (typeof localStorage !== 'undefined' ? localStorage.getItem('auth') : null);
-    const version = getCookie('version') || (typeof localStorage !== 'undefined' ? localStorage.getItem('version') : '1');
-    if (auth) {
-      return `Bearer ${auth},${version}`;
+  useEffect(() => {
+    updateFormattingRef = updateFormatting;
+  });
+
+  const handleAddPage = () => {
+    if (pages.length < MAX_PAGES) {
+      setPages((prev) => [...prev, { pageIndex: prev.length }]);
     }
-    return null;
   };
 
-  const updateZoom = (newZoom) => {
-    const clamped = Math.min(Math.max(0.25, Math.round(newZoom * 100) / 100), 3.0);
-    zoomLevel = clamped;
-    zoomRef.current = clamped;
-    setZoom(clamped);
+  const syncState = () => {
+    if (selectedShape) {
+      let isB = false;
+      let isI = false;
+      let isU = false;
+
+      if (inlineTextInput) {
+        isB = checkHtmlFormattingState(inlineTextInput.innerHTML, 'bold');
+        isI = checkHtmlFormattingState(inlineTextInput.innerHTML, 'italic');
+        isU = checkHtmlFormattingState(inlineTextInput.innerHTML, 'underline');
+      } else if (selectedShape.text) {
+        isB = checkHtmlFormattingState(selectedShape.text, 'bold');
+        isI = checkHtmlFormattingState(selectedShape.text, 'italic');
+        isU = checkHtmlFormattingState(selectedShape.text, 'underline');
+      }
+
+      setFormatting({
+        textSize: selectedShape.textSize || defaultFormatting.textSize,
+        fontFamily: selectedShape.textFont || defaultFormatting.fontFamily,
+        isBold: isB,
+        isItalic: isI,
+        isUnderline: isU,
+        textColor: selectedShape.color || defaultFormatting.textColor,
+        borderColor: selectedShape.borderColor || defaultFormatting.borderColor,
+        fillColor: selectedShape.fillColor || defaultFormatting.fillColor,
+        textAlign: selectedShape.textAlign || "left",
+        verticalAlign: selectedShape.verticalAlign || "top",
+        letterSpacing: selectedShape.letterSpacing || 0,
+        lineHeight: selectedShape.lineHeight || 1.2,
+        isStrikethrough: selectedShape.isStrikethrough || false,
+        textTransform: selectedShape.textTransform || "none",
+        padding: selectedShape.padding != null ? selectedShape.padding : 5
+      });
+    }
+  };
+
+  useEffect(() => {
+    syncStateCallback = syncState;
+    onMount();
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (inlineTextInput !== null) return;
+        if (selectedShape !== null) {
+          e.preventDefault();
+          deleteSelectedShape();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const handleToolChange = (tool) => {
+    if (activeTool === tool) {
+      setActiveTool(null);
+      drawType = null;
+    } else {
+      setActiveTool(tool);
+      drawType = tool;
+    }
+    selectedShape = null;
     redrawScene(true);
   };
 
-  const handleZoomIn = () => updateZoom(zoom + 0.1);
-  const handleZoomOut = () => updateZoom(zoom - 0.1);
-  const handleResetZoom = () => updateZoom(1.0);
+  const updateZoom = (newZoom) => {
+    const clampedZoom = Math.min(Math.max(newZoom, 0.5), 2.5);
+    zoomLevel = clampedZoom;
+    zoomRef.current = clampedZoom;
+    const documentContainer = document.getElementById('document-container');
+    if (documentContainer) {
+      documentContainer.style.transform = `scale(${clampedZoom})`;
+      documentContainer.style.transformOrigin = 'top center';
+    }
+    updateInlineTextInputPosition();
+    redrawScene(true);
+  };
 
-  const fetchUserImages = async () => {
+  const getAuthTokenHeader = () => {
+    const token = getCookie('authtoken');
+    return token ? `Bearer ${token}` : null;
+  };
+
+  const handleOpenImagesModal = async () => {
+    setShowImagesModal(true);
     try {
       const authHeader = getAuthTokenHeader();
       const res = await fetch('/api/user-images', {
@@ -790,19 +843,14 @@ function RenderPDFEditor() {
     }
   };
 
-  const handleOpenImagesModal = () => {
-    setShowImagesModal(true);
-    fetchUserImages();
-  };
-
-  const handleUploadImage = async (event) => {
+  const handleImageUpload = async (event) => {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
 
     const formData = new FormData();
     formData.append('image', file);
-
     setIsUploading(true);
+
     try {
       const authHeader = getAuthTokenHeader();
       const res = await fetch('/api/upload-image', {
@@ -841,71 +889,90 @@ function RenderPDFEditor() {
 
     const newImgShape = new image(
       [{ x: startX, y: startY }, { x: startX + imgWidth, y: startY + imgHeight }],
-      "transparent",
+      'transparent',
       0,
       null,
       null,
       null,
       null,
-      defaultFormatting.fontFamily,
+      null,
       imageUrl
     );
     newImgShape.pageIndex = pageIndex;
-    newImgShape.loadImage(imageUrl, () => {
-      shapes.push(newImgShape);
-      selectedShape = newImgShape;
-      redrawScene(true);
-    });
+
+    shapes.push(newImgShape);
+    selectedShape = newImgShape;
+    interactionMode = null;
     setShowImagesModal(false);
-  };
-
-  const handleToolChange = (tool) => {
-    drawType = activeTool === tool ? null : tool;
-    setActiveTool(drawType);
-  };
-
-  const handleAddPage = () => {
-    if (pages.length < MAX_PAGES) {
-      setPages([...pages, { pageIndex: pages.length }]);
-    }
+    if (syncStateCallback) syncStateCallback();
+    redrawScene(true);
   };
 
   const handleSave = () => {
-    const jsonString = JSON.stringify(shapes);
-    const blob = new Blob([jsonString], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "document.json";
-    a.click();
-    URL.revokeObjectURL(url);
+    const exportData = shapes.map((shape) => {
+      let type = "line";
+      if (shape instanceof rectangle && !(shape instanceof oval) && !(shape instanceof image)) type = "rectangle";
+      if (shape instanceof oval) type = "oval";
+      if (shape instanceof image) type = "image";
+
+      return {
+        type: type,
+        location: shape.location,
+        borderColor: shape.borderColor,
+        borderWidth: shape.borderWidth,
+        text: shape.text,
+        textSize: shape.textSize,
+        color: shape.color,
+        fillColor: shape.fillColor,
+        textFont: shape.textFont,
+        imageSrc: shape instanceof image ? shape.imageSrc : undefined,
+        pageIndex: shape.pageIndex || 0,
+        textAlign: shape.textAlign,
+        verticalAlign: shape.verticalAlign,
+        letterSpacing: shape.letterSpacing,
+        lineHeight: shape.lineHeight,
+        isStrikethrough: shape.isStrikethrough,
+        textTransform: shape.textTransform,
+        padding: shape.padding
+      };
+    });
+
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", "pdf_editor_shapes.json");
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
   };
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const handleLoadClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = (event) => {
+    const fileObj = event.target.files && event.target.files[0];
+    if (!fileObj) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = (e) => {
       try {
-        const data = JSON.parse(event.target.result);
-        if (Array.isArray(data)) {
-          load(data);
-        } else {
-          alert("Invalid file format.");
+        const parsed = JSON.parse(e.target.result);
+        if (Array.isArray(parsed)) {
+          loadShapesData(parsed);
         }
       } catch (err) {
-        alert("Failed to parse JSON file.");
+        console.error("Invalid JSON format:", err);
       }
     };
-    reader.readAsText(file);
-    e.target.value = null;
+    reader.readAsText(fileObj);
+    event.target.value = "";
   };
 
-  function load(dataToLoad) {
-    if (!dataToLoad) return;
-    selectedShape = null;
-    shapes = dataToLoad.map((item) => {
+  const loadShapesData = (data) => {
+    shapes = data.map((item) => {
       let temp = null;
       switch (item.type) {
         case "line":
@@ -926,11 +993,18 @@ function RenderPDFEditor() {
       }
       if (temp) {
         temp.pageIndex = item.pageIndex || 0;
+        temp.textAlign = item.textAlign || "left";
+        temp.verticalAlign = item.verticalAlign || "top";
+        temp.letterSpacing = item.letterSpacing || 0;
+        temp.lineHeight = item.lineHeight || 1.2;
+        temp.isStrikethrough = item.isStrikethrough || false;
+        temp.textTransform = item.textTransform || "none";
+        temp.padding = item.padding != null ? item.padding : 5;
       }
       return temp;
     });
     redrawScene(false);
-  }
+  };
 
   function TooltipWrapper({ text, children }) {
     const [isVisible, setIsVisible] = useState(false);
@@ -950,7 +1024,7 @@ function RenderPDFEditor() {
     };
 
     return (
-      <div 
+      <div
         style={{ position: 'relative', display: 'inline-block', width: '100%' }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
@@ -963,15 +1037,14 @@ function RenderPDFEditor() {
             top: '50%',
             transform: 'translateY(-50%)',
             marginLeft: '8px',
-            backgroundColor: '#333',
+            backgroundColor: 'rgba(0,0,0,0.8)',
             color: '#fff',
             padding: '4px 8px',
             borderRadius: '4px',
             fontSize: '11px',
             whiteSpace: 'nowrap',
             zIndex: 1000,
-            pointerEvents: 'none',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+            pointerEvents: 'none'
           }}>
             {text}
           </div>
@@ -981,65 +1054,6 @@ function RenderPDFEditor() {
   }
 
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        const target = e.target;
-        const isInput = target && (
-          target.tagName === 'INPUT' || 
-          target.tagName === 'TEXTAREA' || 
-          target.isContentEditable
-        );
-
-        if (!isInput) {
-          e.preventDefault();
-          deleteSelectedShape();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, []);
-
-  useEffect(() => {
-    onMount();
-    load();
-    updateFormattingRef = updateFormatting;
-
-    syncStateCallback = () => {
-      if (selectedShape) {
-        const isEditing = inlineTextInput !== null;
-        setFormatting({
-          textSize: selectedShape.textSize || 14,
-          fontFamily: selectedShape.textFont || defaultFormatting.fontFamily,
-          isBold: isEditing ? document.queryCommandState('bold') : checkHtmlFormattingState(selectedShape.text, 'bold'),
-          isItalic: isEditing ? document.queryCommandState('italic') : checkHtmlFormattingState(selectedShape.text, 'italic'),
-          isUnderline: isEditing ? document.queryCommandState('underline') : checkHtmlFormattingState(selectedShape.text, 'underline'),
-          textColor: selectedShape.color || "#000000",
-          borderColor: selectedShape.borderColor || "#000000",
-          fillColor: selectedShape.fillColor || null
-        });
-      } else {
-        setFormatting(defaultFormatting);
-      }
-    };
-
-    return () => {
-      removeInlineTextInput();
-      backgroundCanvas = null;
-      foregroundCanvas = null;
-      syncStateCallback = null;
-      updateFormattingRef = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    redrawScene(true);
-  }, [pages]);
-
-  useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
 
@@ -1047,7 +1061,7 @@ function RenderPDFEditor() {
     let initialPinchZoom = 1.0;
 
     const handleWheel = (e) => {
-      if (e.ctrlKey || e.metaKey) {
+      if (e.ctrlKey) {
         e.preventDefault();
         const zoomDelta = e.deltaY < 0 ? 0.05 : -0.05;
         updateZoom(zoomRef.current + zoomDelta);
@@ -1098,67 +1112,67 @@ function RenderPDFEditor() {
     pages.forEach(({ pageIndex }) => {
       const bgCanvas = document.getElementById(`document_background_${pageIndex}`);
       const fgCanvas = document.getElementById(`document_foreground_${pageIndex}`);
-      if (!bgCanvas || !fgCanvas) return;
 
-      const dpr = window.devicePixelRatio || 1;
+      if (bgCanvas && fgCanvas) {
+        const bgCtx = bgCanvas.getContext('2d');
+        const fgCtx = fgCanvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
 
-      bgCanvas.width = dimensions.width * dpr;
-      bgCanvas.height = dimensions.height * dpr;
-      fgCanvas.width = dimensions.width * dpr;
-      fgCanvas.height = dimensions.height * dpr;
+        bgCanvas.width = 800 * dpr;
+        bgCanvas.height = 1000 * dpr;
+        fgCanvas.width = 800 * dpr;
+        fgCanvas.height = 1000 * dpr;
 
-      bgCanvas.style.width = `${dimensions.width}px`;
-      bgCanvas.style.height = `${dimensions.height}px`;
-      fgCanvas.style.width = `${dimensions.width}px`;
-      fgCanvas.style.height = `${dimensions.height}px`;
+        bgCanvas.style.width = '800px';
+        bgCanvas.style.height = '1000px';
+        fgCanvas.style.width = '800px';
+        fgCanvas.style.height = '1000px';
 
-      const bgCtx = bgCanvas.getContext('2d');
-      const fgCtx = fgCanvas.getContext('2d');
-
-      if (bgCtx) bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      if (fgCtx) fgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        bgCtx.scale(dpr, dpr);
+        fgCtx.scale(dpr, dpr);
+      }
     });
 
     redrawScene(true);
-  }, [pages, dimensions]);
+  }, [pages]);
 
   const updateFormatting = (key, value) => {
     if (selectedShape) {
+      selectedShape[key] = value;
+
       if (key === 'textSize') {
-        selectedShape.textSize = value;
-        if (inlineTextInput) {
-          const scaledSize = value * zoomLevel;
-          inlineTextInput.style.fontSize = `${scaledSize}px`;
-          inlineTextInput.style.lineHeight = `${Math.max(12 * zoomLevel, Math.ceil(scaledSize * 1.2))}px`;
-        }
+        selectedShape.textSize = parseInt(value, 10);
+        if (inlineTextInput) inlineTextInput.style.fontSize = `${value * zoomLevel}px`;
       }
       if (key === 'fontFamily') {
         selectedShape.textFont = value;
+        if (inlineTextInput) inlineTextInput.style.fontFamily = value;
+      }
+      if (key === 'isBold') {
         if (inlineTextInput) {
-          inlineTextInput.style.fontFamily = value;
+          inlineTextInput.focus();
+          document.execCommand('bold', false, null);
+          selectedShape.text = inlineTextInput.innerHTML;
+        } else {
+          selectedShape.text = toggleHtmlFormatting(selectedShape.text, 'bold');
         }
       }
-      if (key === 'isBold' || key === 'isItalic' || key === 'isUnderline' || key === 'link') {
-        if (key === 'link') {
-          const url = prompt("Enter URL:", "https://");
-          if (url && inlineTextInput) {
-            document.execCommand('createLink', false, url);
-            selectedShape.text = inlineTextInput.innerHTML;
-            if (syncStateCallback) syncStateCallback();
-            redrawScene(true);
-          }
-          return;
-        }
-        const cmdMap = { isBold: 'bold', isItalic: 'italic', isUnderline: 'underline' };
-        const cmd = cmdMap[key];
+      if (key === 'isItalic') {
         if (inlineTextInput) {
-          document.execCommand(cmd, false, null);
+          inlineTextInput.focus();
+          document.execCommand('italic', false, null);
           selectedShape.text = inlineTextInput.innerHTML;
-          if (syncStateCallback) syncStateCallback();
-          redrawScene(true);
-          return;
         } else {
-          selectedShape.text = toggleHtmlFormatting(selectedShape.text, cmd);
+          selectedShape.text = toggleHtmlFormatting(selectedShape.text, 'italic');
+        }
+      }
+      if (key === 'isUnderline') {
+        if (inlineTextInput) {
+          inlineTextInput.focus();
+          document.execCommand('underline', false, null);
+          selectedShape.text = inlineTextInput.innerHTML;
+        } else {
+          selectedShape.text = toggleHtmlFormatting(selectedShape.text, 'underline');
         }
       }
       if (key === 'textColor') {
@@ -1167,6 +1181,28 @@ function RenderPDFEditor() {
       }
       if (key === 'borderColor') selectedShape.borderColor = value;
       if (key === 'fillColor') selectedShape.fillColor = value;
+      if (key === 'textAlign') {
+        selectedShape.textAlign = value;
+        if (inlineTextInput) inlineTextInput.style.textAlign = value;
+      }
+      if (key === 'letterSpacing') {
+        selectedShape.letterSpacing = parseFloat(value);
+        if (inlineTextInput) inlineTextInput.style.letterSpacing = `${value * zoomLevel}px`;
+      }
+      if (key === 'lineHeight') {
+        selectedShape.lineHeight = parseFloat(value);
+      }
+      if (key === 'isStrikethrough') {
+        selectedShape.isStrikethrough = value;
+      }
+      if (key === 'textTransform') {
+        selectedShape.textTransform = value;
+        if (inlineTextInput) inlineTextInput.style.textTransform = value;
+      }
+      if (key === 'padding') {
+        selectedShape.padding = parseInt(value, 10);
+      }
+
       redrawScene(true);
     } else {
       defaultFormatting[key] = value;
@@ -1180,108 +1216,150 @@ function RenderPDFEditor() {
 
   return (
     <div id="pdf-editor" style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden', position: 'relative' }}>
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        accept=".json"
-        style={{ display: 'none' }}
-      />
-
+      <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" style={{ display: 'none' }} />
       <header id="toolbar" style={{ display: 'flex', gap: '15px', alignItems: 'center', justifyContent: 'center' }}>
         <button className="toolbar-button" onClick={handleSave}>Save</button>
+        <button className="toolbar-button" onClick={handleLoadClick}>Load</button>
         <div style={{ height: '20px', width: '1px', backgroundColor: '#ccc' }} />
-
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
           <label style={{ fontSize: '12px' }}>Font:</label>
-          <select
-            value={formatting.fontFamily}
-            onChange={(e) => updateFormatting('fontFamily', e.target.value)}
-            style={{ height: '26px', borderRadius: '4px', border: '1px solid #ccc', padding: '0 4px', fontSize: '12px' }}
-          >
+          <select value={formatting.fontFamily} onChange={(e) => updateFormatting('fontFamily', e.target.value)} style={{ height: '26px', borderRadius: '4px', border: '1px solid #ccc', padding: '0 4px', fontSize: '12px' }}>
             <option value="Arial">Arial</option>
-            <option value="Helvetica">Helvetica</option>
             <option value="Times New Roman">Times New Roman</option>
             <option value="Courier New">Courier New</option>
             <option value="Georgia">Georgia</option>
             <option value="Verdana">Verdana</option>
-            <option value="Trebuchet MS">Trebuchet MS</option>
-            <option value="Comic Sans MS">Comic Sans MS</option>
-            <option value="Impact">Impact</option>
           </select>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <label style={{ fontSize: '12px' }}>Font Size:</label>
-          <input
-            type="number"
-            value={formatting.textSize}
-            onChange={(e) => updateFormatting('textSize', parseInt(e.target.value) || 12)}
-            style={{ width: '50px' }}
-          />
+          <label style={{ fontSize: '12px' }}>Size:</label>
+          <input type="number" value={formatting.textSize} onChange={(e) => updateFormatting('textSize', e.target.value)} style={{ width: '45px', height: '22px', borderRadius: '4px', border: '1px solid #ccc', padding: '0 4px', fontSize: '12px' }} />
         </div>
 
-        <div style={{ display: 'flex', gap: '5px' }}>
-          <button
-            className={`toolbar-button ${formatting.isBold ? 'active' : ''}`}
-            onMouseDown={(e) => { e.preventDefault(); updateFormatting('isBold', !formatting.isBold); }}
-          >
-            <b>B</b>
-          </button>
-          <button
-            className={`toolbar-button ${formatting.isItalic ? 'active' : ''}`}
-            onMouseDown={(e) => { e.preventDefault(); updateFormatting('isItalic', !formatting.isItalic); }}
-          >
-            <i>I</i>
-          </button>
-          <button
-            className={`toolbar-button ${formatting.isUnderline ? 'active' : ''}`}
-            onMouseDown={(e) => { e.preventDefault(); updateFormatting('isUnderline', !formatting.isUnderline); }}
-          >
-            <u>U</u>
-          </button>
-          <button
-            className="toolbar-button"
-            onMouseDown={(e) => { e.preventDefault(); updateFormatting('link'); }}
-          >
-            🔗
-          </button>
+        <div style={{ display: 'flex', gap: '2px' }}>
+          <button className={`toolbar-button ${formatting.isBold ? 'active' : ''}`} onClick={() => updateFormatting('isBold', !formatting.isBold)} style={{ fontWeight: 'bold', width: '28px', padding: '0' }}>B</button>
+          <button className={`toolbar-button ${formatting.isItalic ? 'active' : ''}`} onClick={() => updateFormatting('isItalic', !formatting.isItalic)} style={{ fontStyle: 'italic', width: '28px', padding: '0' }}>I</button>
+          <button className={`toolbar-button ${formatting.isUnderline ? 'active' : ''}`} onClick={() => updateFormatting('isUnderline', !formatting.isUnderline)} style={{ textDecoration: 'underline', width: '28px', padding: '0' }}>U</button>
         </div>
 
-        <TooltipWrapper text="Text Color">
-          <ColorPickerDropdown
-            icon="T"
-            value={formatting.textColor}
-            onChange={(c) => updateFormatting('textColor', c)}
-            allowTransparent={false}
-            isOpen={activeDropdown === 'text'}
-            onToggle={() => handleDropdownToggle('text')}
-          />
-        </TooltipWrapper>
+        <div style={{ height: '20px', width: '1px', backgroundColor: '#ccc' }} />
 
-        <TooltipWrapper text="Border Color">
-          <ColorPickerDropdown
-            icon="🔲"
-            value={formatting.borderColor}
-            onChange={(c) => updateFormatting('borderColor', c)}
-            allowTransparent={true}
-            isOpen={activeDropdown === 'border'}
-            onToggle={() => handleDropdownToggle('border')}
-          />
-        </TooltipWrapper>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <label style={{ fontSize: '12px' }}>Text:</label>
+          <CustomColorPicker value={formatting.textColor} onChange={(c) => updateFormatting('textColor', c)} isOpen={activeDropdown === 'textColor'} onToggle={() => handleDropdownToggle('textColor')} />
+        </div>
 
-        {(selectedShape instanceof rectangle || selectedShape instanceof oval) && (
-          <TooltipWrapper text="Fill Color">
-            <ColorPickerDropdown
-              icon="🎨"
-              value={formatting.fillColor}
-              onChange={(c) => updateFormatting('fillColor', c)}
-              allowTransparent={true}
-              isOpen={activeDropdown === 'fill'}
-              onToggle={() => handleDropdownToggle('fill')}
-            />
-          </TooltipWrapper>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <label style={{ fontSize: '12px' }}>Border:</label>
+          <CustomColorPicker value={formatting.borderColor} onChange={(c) => updateFormatting('borderColor', c)} allowTransparent={true} isOpen={activeDropdown === 'borderColor'} onToggle={() => handleDropdownToggle('borderColor')} />
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <label style={{ fontSize: '12px' }}>Fill:</label>
+          <CustomColorPicker value={formatting.fillColor} onChange={(c) => updateFormatting('fillColor', c)} allowTransparent={true} isOpen={activeDropdown === 'fillColor'} onToggle={() => handleDropdownToggle('fillColor')} />
+        </div>
+
+        <div style={{ height: '20px', width: '1px', backgroundColor: '#ccc' }} />
+
+        <div style={{ position: 'relative' }}>
+          <button
+            className={`toolbar-button ${showMoreOptions ? 'active' : ''}`}
+            onClick={() => setShowMoreOptions(!showMoreOptions)}
+            style={{ fontWeight: 'bold', width: '32px', padding: '0' }}
+            title="More Options"
+          >
+            ...
+          </button>
+
+          {showMoreOptions && (
+            <div className="more-options-popover">
+              <div className="more-options-section">
+                <span className="more-options-label">Horizontal Align</span>
+                <div className="more-options-btn-group">
+                  <button className={`toolbar-button ${formatting.textAlign === 'left' ? 'active' : ''}`} onClick={() => updateFormatting('textAlign', 'left')}>Left</button>
+                  <button className={`toolbar-button ${formatting.textAlign === 'center' ? 'active' : ''}`} onClick={() => updateFormatting('textAlign', 'center')}>Center</button>
+                  <button className={`toolbar-button ${formatting.textAlign === 'right' ? 'active' : ''}`} onClick={() => updateFormatting('textAlign', 'right')}>Right</button>
+                  <button className={`toolbar-button ${formatting.textAlign === 'justify' ? 'active' : ''}`} onClick={() => updateFormatting('textAlign', 'justify')}>Justify</button>
+                </div>
+              </div>
+
+              <div className="more-options-section">
+                <span className="more-options-label">Vertical Align</span>
+                <div className="more-options-btn-group">
+                  <button className={`toolbar-button ${formatting.verticalAlign === 'top' ? 'active' : ''}`} onClick={() => updateFormatting('verticalAlign', 'top')}>Top</button>
+                  <button className={`toolbar-button ${formatting.verticalAlign === 'center' ? 'active' : ''}`} onClick={() => updateFormatting('verticalAlign', 'center')}>Middle</button>
+                  <button className={`toolbar-button ${formatting.verticalAlign === 'bottom' ? 'active' : ''}`} onClick={() => updateFormatting('verticalAlign', 'bottom')}>Bottom</button>
+                </div>
+              </div>
+
+              <div className="more-options-section">
+                <span className="more-options-label">Letter Spacing: {formatting.letterSpacing}px</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="20"
+                  step="1"
+                  value={formatting.letterSpacing}
+                  onChange={(e) => updateFormatting('letterSpacing', e.target.value)}
+                  className="more-options-slider"
+                />
+              </div>
+
+              <div className="more-options-section">
+                <span className="more-options-label">Line Height: {formatting.lineHeight}x</span>
+                <input
+                  type="range"
+                  min="1.0"
+                  max="3.0"
+                  step="0.1"
+                  value={formatting.lineHeight}
+                  onChange={(e) => updateFormatting('lineHeight', e.target.value)}
+                  className="more-options-slider"
+                />
+              </div>
+
+              <div className="more-options-section">
+                <span className="more-options-label">Padding: {formatting.padding}px</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="30"
+                  step="1"
+                  value={formatting.padding}
+                  onChange={(e) => updateFormatting('padding', e.target.value)}
+                  className="more-options-slider"
+                />
+              </div>
+
+              <div className="more-options-section">
+                <span className="more-options-label">Transform</span>
+                <select
+                  value={formatting.textTransform}
+                  onChange={(e) => updateFormatting('textTransform', e.target.value)}
+                  className="more-options-select"
+                >
+                  <option value="none">None</option>
+                  <option value="uppercase">UPPERCASE</option>
+                  <option value="lowercase">lowercase</option>
+                  <option value="capitalize">Capitalize</option>
+                </select>
+              </div>
+
+              <div className="more-options-section">
+                <div className="more-options-btn-group">
+                  <button
+                    className={`toolbar-button ${formatting.isStrikethrough ? 'active' : ''}`}
+                    onClick={() => updateFormatting('isStrikethrough', !formatting.isStrikethrough)}
+                    style={{ textDecoration: 'line-through', width: '100%' }}
+                  >
+                    Strikethrough
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </header>
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -1316,97 +1394,71 @@ function RenderPDFEditor() {
             padding: '20px 0'
           }}
         >
-          {pages.map(({ pageIndex }) => (
-            <div
-              key={pageIndex}
-              style={{
-                position: 'relative',
-                width: `${dimensions.width * zoom}px`,
-                height: `${dimensions.height * zoom}px`,
-                marginBottom: '20px',
-                flexShrink: 0
-              }}
-            >
+          <div id="document-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px', alignItems: 'center' }}>
+            
+            {pages.map(({ pageIndex }) => (
               <div
+                key={pageIndex}
                 style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: `${dimensions.width}px`,
-                  height: `${dimensions.height}px`,
-                  transform: `scale(${zoom})`,
-                  transformOrigin: 'top left'
+                  position: 'relative',
+                  width: '800px',
+                  height: '1000px',
+                  backgroundColor: '#ffffff',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
                 }}
               >
                 <canvas
                   id={`document_background_${pageIndex}`}
-                  style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1 }}
                 />
                 <canvas
                   id={`document_foreground_${pageIndex}`}
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 2 }}
                   onMouseDown={(e) => mouseDownHandler(e, pageIndex)}
                   onDoubleClick={(e) => mouseDoubleClickHandler(e, pageIndex)}
                   onContextMenu={(e) => contextMenuHandler(e, pageIndex)}
-                  style={{ position: 'absolute', top: 0, left: 0 }}
                 />
               </div>
-            </div>
-          ))}
+            ))}
+            {pages.length < MAX_PAGES && (
+              <button
+                onClick={handleAddPage}
+                style={{
+                  flexShrink: 0,
+                  position: 'relative',
+                  zIndex: 10,
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  backgroundColor: '#ffffff',
+                  border: '2px dashed #007bff',
+                  color: '#007bff',
+                  borderRadius: '6px',
+                  marginTop: '10px',
+                  marginBottom: '90px',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                + Add Page ({pages.length}/{MAX_PAGES})
+              </button>
+            )}
+          </div>
 
-          {pages.length < MAX_PAGES && (
+          <div style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 1000, display: 'flex', gap: '8px' }}>
             <button
-              onClick={handleAddPage}
-              style={{
-                padding: '10px 20px',
-                fontSize: '14px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                backgroundColor: '#ffffff',
-                border: '1px dashed #007bff',
-                color: '#007bff',
-                borderRadius: '4px',
-                marginBottom: '40px'
-              }}
+              onClick={() => updateZoom(zoomRef.current - 0.1)}
+              style={{ padding: '6px 12px', backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
             >
-              + Add Page ({pages.length}/{MAX_PAGES})
+              -
             </button>
-          )}
-
-          <div style={{
-            position: "fixed",
-            bottom: "20px",
-            left: "calc(50% + 120px)",
-            transform: "translateX(-50%)",
-            backgroundColor: "#ffffff",
-            border: "1px solid #ccc",
-            borderRadius: "20px",
-            boxShadow: "0 2px 10px rgba(0,0,0,0.15)",
-            padding: "6px 16px",
-            display: "flex",
-            alignItems: "center",
-            gap: "12px",
-            zIndex: 100
-          }}>
-            <button 
-              onClick={handleZoomOut}
-              disabled={zoom <= 0.25}
-              style={{ border: "none", background: "none", cursor: zoom <= 0.25 ? "default" : "pointer", fontSize: "16px", padding: "2px 6px", opacity: zoom <= 0.25 ? 0.4 : 1 }}
-              title="Zoom Out"
-            >
-              −
-            </button>
-            <span 
-              onClick={handleResetZoom}
-              style={{ fontSize: "13px", fontWeight: "bold", minWidth: "45px", textAlign: "center", cursor: "pointer", userSelect: "none" }}
-              title="Reset Zoom (100%)"
-            >
-              {Math.round(zoom * 100)}%
+            <span style={{ padding: '6px 12px', backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px', fontSize: '12px', lineHeight: '18px' }}>
+              {Math.round(zoomRef.current * 100)}%
             </span>
-            <button 
-              onClick={handleZoomIn}
-              disabled={zoom >= 3.0}
-              style={{ border: "none", background: "none", cursor: zoom >= 3.0 ? "default" : "pointer", fontSize: "16px", padding: "2px 6px", opacity: zoom >= 3.0 ? 0.4 : 1 }}
-              title="Zoom In"
+            <button
+              onClick={() => updateZoom(zoomRef.current + 0.1)}
+              style={{ padding: '6px 12px', backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
             >
               +
             </button>
@@ -1415,64 +1467,34 @@ function RenderPDFEditor() {
       </div>
 
       {showImagesModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100vw',
-          height: '100vh',
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          zIndex: 2000,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <div style={{
-            backgroundColor: '#fff',
-            borderRadius: '8px',
-            width: '500px',
-            maxWidth: '90%',
-            maxHeight: '80vh',
-            display: 'flex',
-            flexDirection: 'column',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-            overflow: 'hidden'
-          }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '8px', width: '500px', maxWidth: '90%', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '18px' }}>Select an Image</h3>
-              <button onClick={() => setShowImagesModal(false)} style={{ border: 'none', background: 'none', fontSize: '20px', cursor: 'pointer', color: '#666' }}>&times;</button>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#333' }}>Insert Image</h3>
+              <button onClick={() => setShowImagesModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '18px', color: '#999' }}>&times;</button>
             </div>
 
             <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
-              <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <label style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#007bff',
-                  color: '#fff',
-                  borderRadius: '4px',
-                  cursor: isUploading ? 'not-allowed' : 'pointer',
-                  fontSize: '14px'
-                }}>
-                  {isUploading ? 'Uploading...' : 'Upload New Image'}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleUploadImage}
-                    disabled={isUploading}
-                    style={{ display: 'none' }}
-                  />
-                </label>
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', fontWeight: 'bold', color: '#555' }}>Upload New Image:</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  disabled={isUploading}
+                  style={{ fontSize: '12px' }}
+                />
+                {isUploading && <span style={{ marginLeft: '10px', fontSize: '12px', color: '#007bff' }}>Uploading...</span>}
               </div>
 
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', fontWeight: 'bold', color: '#555' }}>Choose from Previous Uploads:</label>
               {userImages.length === 0 ? (
-                <p style={{ color: '#888', fontStyle: 'italic', textAlign: 'center', margin: '30px 0' }}>
-                  No uploaded images yet.
-                </p>
+                <div style={{ fontSize: '12px', color: '#888', fontStyle: 'italic', padding: '10px 0' }}>No previous uploads found.</div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                  {userImages.map((img) => (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                  {userImages.map((img, idx) => (
                     <div
-                      key={img.filename}
+                      key={idx}
                       onClick={() => handleSelectImage(img.url)}
                       style={{
                         border: '1px solid #ddd',

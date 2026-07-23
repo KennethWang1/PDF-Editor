@@ -52,6 +52,16 @@ function stripHtmlTags(html) {
   return div.textContent || div.innerText || "";
 }
 
+function applyTextTransform(text, transform) {
+  if (!text || !transform || transform === 'none') return text;
+  if (transform === 'uppercase') return text.toUpperCase();
+  if (transform === 'lowercase') return text.toLowerCase();
+  if (transform === 'capitalize') {
+    return text.replace(/\b\w/g, c => c.toUpperCase());
+  }
+  return text;
+}
+
 function renderRichText(
   context,
   htmlText,
@@ -63,16 +73,31 @@ function renderRichText(
   defaultColor,
   align = "left",
   vAlign = "top",
-  boxHeight = null
+  boxHeight = null,
+  options = {}
 ) {
   if (!htmlText) return;
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = htmlText;
   
-  const lineHeight = Math.max(12, Math.ceil(defaultFontSize * 1.2));
+  const lineSpacingMult = options.lineHeight || 1.2;
+  const letterSpacing = options.letterSpacing || 0;
+  const isStrikethroughOption = options.isStrikethrough || false;
+  const textTransformOption = options.textTransform || 'none';
+
+  const lineHeight = Math.max(12, Math.ceil(defaultFontSize * lineSpacingMult));
   context.textBaseline = "top";
 
   const lines = [[]];
+
+  function measureWordWidth(word, fontStr) {
+    context.font = fontStr;
+    const baseWidth = context.measureText(word).width;
+    if (letterSpacing > 0 && word.length > 0) {
+      return baseWidth + (word.length - 1) * letterSpacing;
+    }
+    return baseWidth;
+  }
 
   function getLineWidth(lineItems) {
     let w = 0;
@@ -82,9 +107,10 @@ function renderRichText(
     return w;
   }
 
-  function processNode(node, isBold, isItalic, isUnderline, currentLink = null) {
+  function processNode(node, isBold, isItalic, isUnderline, isStrikethrough, currentLink = null) {
     if (node.nodeType === Node.TEXT_NODE) {
-      const words = node.textContent.split(/(\s+)/);
+      let textVal = applyTextTransform(node.textContent, textTransformOption);
+      const words = textVal.split(/(\s+)/);
       for (const word of words) {
         if (word === "") continue;
         if (word === '\n') {
@@ -93,24 +119,24 @@ function renderRichText(
         }
         
         const fontStr = `${isItalic ? 'italic ' : ''}${isBold ? 'bold ' : ''}${defaultFontSize}px ${defaultFontFamily}`;
-        context.font = fontStr;
-        const metrics = context.measureText(word);
+        const wordWidth = measureWordWidth(word, fontStr);
         
         let currentLine = lines[lines.length - 1];
         let currentWidth = getLineWidth(currentLine);
 
-        if (currentWidth + metrics.width > maxWidth && word.trim() !== "" && currentLine.length > 0) {
+        if (currentWidth + wordWidth > maxWidth && word.trim() !== "" && currentLine.length > 0) {
           lines.push([]);
           currentLine = lines[lines.length - 1];
         }
 
         currentLine.push({
           text: word,
-          width: metrics.width,
+          width: wordWidth,
           font: fontStr,
           isBold,
           isItalic,
           isUnderline,
+          isStrikethrough: isStrikethrough || isStrikethroughOption,
           link: currentLink,
         });
       }
@@ -119,11 +145,13 @@ function renderRichText(
       let newBold = isBold;
       let newItalic = isItalic;
       let newUnderline = isUnderline;
+      let newStrikethrough = isStrikethrough;
       let newLink = currentLink;
       
       if (tag === 'b' || tag === 'strong') newBold = true;
       else if (tag === 'i' || tag === 'em') newItalic = true;
       else if (tag === 'u') newUnderline = true;
+      else if (tag === 's' || tag === 'strike' || tag === 'del') newStrikethrough = true;
       else if (tag === 'a') {
         newLink = node.getAttribute('href') || node.href || null;
         newUnderline = true;
@@ -138,8 +166,9 @@ function renderRichText(
         
         if ((node.style.textDecoration && node.style.textDecoration.includes('underline')) || (node.style.textDecorationLine && node.style.textDecorationLine.includes('underline'))) {
           newUnderline = true;
-        } else if (node.style.textDecoration === 'none' || node.style.textDecorationLine === 'none') {
-          newUnderline = false;
+        }
+        if ((node.style.textDecoration && node.style.textDecoration.includes('line-through')) || (node.style.textDecorationLine && node.style.textDecorationLine.includes('line-through'))) {
+          newStrikethrough = true;
         }
       }
       
@@ -154,7 +183,7 @@ function renderRichText(
       }
 
       for (const child of node.childNodes) {
-        processNode(child, newBold, newItalic, newUnderline, newLink);
+        processNode(child, newBold, newItalic, newUnderline, newStrikethrough, newLink);
       }
       
       lastLine = lines[lines.length - 1];
@@ -165,7 +194,7 @@ function renderRichText(
   }
 
   for (const child of tempDiv.childNodes) {
-    processNode(child, false, false, false, null);
+    processNode(child, false, false, false, false, null);
   }
 
   const totalHeight = lines.length * lineHeight;
@@ -190,11 +219,30 @@ function renderRichText(
       currentX = x + maxWidth - lineWidth;
     }
 
+    const spaceCount = lineItems.filter(i => i.text.trim() === "").length;
+    const isJustified = align === "justify" && spaceCount > 0 && lineItems !== lines[lines.length - 1];
+    const justifyExtraWidth = isJustified ? (maxWidth - lineWidth) / spaceCount : 0;
+
     for (const item of lineItems) {
       context.font = item.font;
       const textColor = defaultColor;
       context.fillStyle = textColor;
-      context.fillText(item.text, currentX, currentY);
+
+      let drawWidth = item.width;
+      if (item.text.trim() === "" && isJustified) {
+        drawWidth += justifyExtraWidth;
+      }
+
+      if (letterSpacing > 0) {
+        let charX = currentX;
+        for (let c = 0; c < item.text.length; c++) {
+          const charStr = item.text[c];
+          context.fillText(charStr, charX, currentY);
+          charX += context.measureText(charStr).width + letterSpacing;
+        }
+      } else {
+        context.fillText(item.text, currentX, currentY);
+      }
 
       if (item.isUnderline || item.link) {
         context.save();
@@ -202,12 +250,23 @@ function renderRichText(
         context.lineWidth = Math.max(1, Math.floor(defaultFontSize / 14));
         context.beginPath();
         context.moveTo(currentX, currentY + defaultFontSize);
-        context.lineTo(currentX + item.width, currentY + defaultFontSize);
+        context.lineTo(currentX + drawWidth, currentY + defaultFontSize);
         context.stroke();
         context.restore();
       }
 
-      currentX += item.width;
+      if (item.isStrikethrough) {
+        context.save();
+        context.strokeStyle = textColor;
+        context.lineWidth = Math.max(1, Math.floor(defaultFontSize / 14));
+        context.beginPath();
+        context.moveTo(currentX, currentY + defaultFontSize / 2);
+        context.lineTo(currentX + drawWidth, currentY + defaultFontSize / 2);
+        context.stroke();
+        context.restore();
+      }
+
+      currentX += drawWidth;
     }
 
     currentY += lineHeight;
@@ -224,7 +283,8 @@ function getRichTextLinkAtPoint(
   defaultFontFamily,
   align = "left",
   vAlign = "top",
-  boxHeight = null
+  boxHeight = null,
+  options = {}
 ) {
   if (!htmlText || typeof document === 'undefined') return null;
 
@@ -235,8 +295,21 @@ function getRichTextLinkAtPoint(
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = htmlText;
 
-  const lineHeight = Math.max(12, Math.ceil(defaultFontSize * 1.2));
+  const lineSpacingMult = options.lineHeight || 1.2;
+  const letterSpacing = options.letterSpacing || 0;
+  const textTransformOption = options.textTransform || 'none';
+
+  const lineHeight = Math.max(12, Math.ceil(defaultFontSize * lineSpacingMult));
   const lines = [[]];
+
+  function measureWordWidth(word, fontStr) {
+    context.font = fontStr;
+    const baseWidth = context.measureText(word).width;
+    if (letterSpacing > 0 && word.length > 0) {
+      return baseWidth + (word.length - 1) * letterSpacing;
+    }
+    return baseWidth;
+  }
 
   function getLineWidth(lineItems) {
     let w = 0;
@@ -248,7 +321,8 @@ function getRichTextLinkAtPoint(
 
   function processNode(node, isBold, isItalic, isUnderline, currentLink = null) {
     if (node.nodeType === Node.TEXT_NODE) {
-      const words = node.textContent.split(/(\s+)/);
+      let textVal = applyTextTransform(node.textContent, textTransformOption);
+      const words = textVal.split(/(\s+)/);
       for (const word of words) {
         if (word === "") continue;
         if (word === '\n') {
@@ -257,20 +331,19 @@ function getRichTextLinkAtPoint(
         }
 
         const fontStr = `${isItalic ? 'italic ' : ''}${isBold ? 'bold ' : ''}${defaultFontSize}px ${defaultFontFamily}`;
-        context.font = fontStr;
-        const metrics = context.measureText(word);
+        const wordWidth = measureWordWidth(word, fontStr);
 
         let currentLine = lines[lines.length - 1];
         let currentWidth = getLineWidth(currentLine);
 
-        if (currentWidth + metrics.width > maxWidth && word.trim() !== "" && currentLine.length > 0) {
+        if (currentWidth + wordWidth > maxWidth && word.trim() !== "" && currentLine.length > 0) {
           lines.push([]);
           currentLine = lines[lines.length - 1];
         }
 
         currentLine.push({
           text: word,
-          width: metrics.width,
+          width: wordWidth,
           font: fontStr,
           link: currentLink,
         });
@@ -288,20 +361,6 @@ function getRichTextLinkAtPoint(
       else if (tag === 'a') {
         newLink = node.getAttribute('href') || node.href || null;
         newUnderline = true;
-      }
-
-      if (node.style) {
-        if (node.style.fontWeight === 'bold' || node.style.fontWeight === '700') newBold = true;
-        else if (node.style.fontWeight === 'normal' || node.style.fontWeight === '400') newBold = false;
-
-        if (node.style.fontStyle === 'italic') newItalic = true;
-        else if (node.style.fontStyle === 'normal') newItalic = false;
-
-        if ((node.style.textDecoration && node.style.textDecoration.includes('underline')) || (node.style.textDecorationLine && node.style.textDecorationLine.includes('underline'))) {
-          newUnderline = true;
-        } else if (node.style.textDecoration === 'none' || node.style.textDecorationLine === 'none') {
-          newUnderline = false;
-        }
       }
 
       if (tag === 'br') {
@@ -370,22 +429,27 @@ function getRichTextLinkAtPoint(
   return null;
 }
 
-function getRichTextHeight(htmlText, maxWidth, defaultFontSize, defaultFontFamily) {
-  if (typeof document === 'undefined') return defaultFontSize * 1.2;
+function getRichTextHeight(htmlText, maxWidth, defaultFontSize, defaultFontFamily, options = {}) {
+  if (typeof document === 'undefined') return defaultFontSize * (options.lineHeight || 1.2);
   const canvas = document.getElementById("document_foreground") || document.createElement("canvas");
   const context = canvas.getContext("2d");
-  if (!context) return defaultFontSize * 1.2;
+  if (!context) return defaultFontSize * (options.lineHeight || 1.2);
 
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = htmlText || "";
   
   let currentX = 0;
   let linesCount = 1;
-  const lineHeight = Math.max(12, Math.ceil(defaultFontSize * 1.2));
+  const lineSpacingMult = options.lineHeight || 1.2;
+  const letterSpacing = options.letterSpacing || 0;
+  const textTransformOption = options.textTransform || 'none';
+
+  const lineHeight = Math.max(12, Math.ceil(defaultFontSize * lineSpacingMult));
 
   function processNode(node, isBold, isItalic, isUnderline) {
     if (node.nodeType === Node.TEXT_NODE) {
-      const words = node.textContent.split(/(\s+)/);
+      let textVal = applyTextTransform(node.textContent, textTransformOption);
+      const words = textVal.split(/(\s+)/);
       for (const word of words) {
         if (word === "") continue;
         if (word === '\n') {
@@ -394,19 +458,22 @@ function getRichTextHeight(htmlText, maxWidth, defaultFontSize, defaultFontFamil
           continue;
         }
         context.font = `${isItalic ? 'italic ' : ''}${isBold ? 'bold ' : ''}${defaultFontSize}px ${defaultFontFamily}`;
-        const metrics = context.measureText(word);
-        if (currentX + metrics.width > maxWidth && word.trim() !== "") {
+        let wordWidth = context.measureText(word).width;
+        if (letterSpacing > 0 && word.length > 0) {
+          wordWidth += (word.length - 1) * letterSpacing;
+        }
+
+        if (currentX + wordWidth > maxWidth && word.trim() !== "") {
           currentX = 0;
           linesCount++;
         }
-        currentX += metrics.width;
+        currentX += wordWidth;
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const tag = node.tagName.toLowerCase();
       let newBold = isBold;
       let newItalic = isItalic;
       let newUnderline = isUnderline;
-      
       if (tag === 'b' || tag === 'strong') {
         newBold = true;
       } else if (tag === 'i' || tag === 'em') {
@@ -414,42 +481,13 @@ function getRichTextHeight(htmlText, maxWidth, defaultFontSize, defaultFontFamil
       } else if (tag === 'u' || tag === 'a') {
         newUnderline = true;
       }
-      
-      if (node.style) {
-        if (node.style.fontWeight === 'bold' || node.style.fontWeight === '700') {
-          newBold = true;
-        } else if (node.style.fontWeight === 'normal' || node.style.fontWeight === '400') {
-          newBold = false;
-        }
-        
-        if (node.style.fontStyle === 'italic') {
-          newItalic = true;
-        } else if (node.style.fontStyle === 'normal') {
-          newItalic = false;
-        }
-        
-        if ((node.style.textDecoration && node.style.textDecoration.includes('underline')) || (node.style.textDecorationLine && node.style.textDecorationLine.includes('underline'))) {
-          newUnderline = true;
-        } else if (node.style.textDecoration === 'none' || node.style.textDecorationLine === 'none') {
-          newUnderline = false;
-        }
-      }
-      
       if (tag === 'br') {
         currentX = 0;
         linesCount++;
         return;
       }
-      if (tag === 'div' && currentX !== 0) {
-        currentX = 0;
-        linesCount++;
-      }
       for (const child of node.childNodes) {
         processNode(child, newBold, newItalic, newUnderline);
-      }
-      if (tag === 'div' && currentX !== 0) {
-        currentX = 0;
-        linesCount++;
       }
     }
   }
@@ -461,21 +499,8 @@ function getRichTextHeight(htmlText, maxWidth, defaultFontSize, defaultFontFamil
   return linesCount * lineHeight;
 }
 
-function approximateTextDimensions(text, textSize) {
-  const plainText = stripHtmlTags(text);
-  const lines = String(plainText).split(/\r?\n/);
-  const longestLine = lines.reduce((longest, currentLine) => (
-    currentLine.length > longest.length ? currentLine : longest
-  ), "");
-
-  return {
-    width: Math.max(1, longestLine.length * textSize * 0.6),
-    height: Math.max(1, lines.length * textSize * 1.2),
-  };
-}
-
 class shape {
-  constructor(location, borderColor, borderWidth, text, textSize, color, fillColor, textFont){
+  constructor(location = null, borderColor = null, borderWidth = null, text = null, textSize = null, color = null, fillColor = null, textFont = null) {
     this.location = location;
     this.borderColor = borderColor;
     this.borderWidth = borderWidth;
@@ -484,16 +509,56 @@ class shape {
     this.color = color;
     this.fillColor = fillColor;
     this.textFont = textFont;
+    this.rotation = 0;
     this.isEditingText = false;
+    this.textAlign = "left";
+    this.verticalAlign = "top";
+    this.letterSpacing = 0;
+    this.lineHeight = 1.2;
+    this.isStrikethrough = false;
+    this.textTransform = "none";
+    this.padding = 5;
   }
-  
-  drawHighlightBox(contextCanvas){
-    if (contextCanvas === null) throw new Error("Canvas Not Loaded");
-    
+
+  getFormattingOptions() {
+    return {
+      textAlign: this.textAlign || "left",
+      verticalAlign: this.verticalAlign || "top",
+      letterSpacing: this.letterSpacing || 0,
+      lineHeight: this.lineHeight || 1.2,
+      isStrikethrough: this.isStrikethrough || false,
+      textTransform: this.textTransform || "none",
+      padding: this.padding != null ? this.padding : 5
+    };
+  }
+
+  worldToLocal(point, customCenter = null) {
+    const center = customCenter || this.getCenter();
+    const dx = point.x - center.x;
+    const dy = point.y - center.y;
+    const cos = Math.cos(-this.rotation);
+    const sin = Math.sin(-this.rotation);
+    return {
+      x: dx * cos - dy * sin,
+      y: dx * sin + dy * cos,
+    };
+  }
+
+  localToWorld(point, customCenter = null) {
+    const center = customCenter || this.getCenter();
+    const cos = Math.cos(this.rotation);
+    const sin = Math.sin(this.rotation);
+    return {
+      x: center.x + (point.x * cos - point.y * sin),
+      y: center.y + (point.x * sin + point.y * cos),
+    };
+  }
+
+  drawHighlightBox(contextCanvas) {
     contextCanvas.save();
     contextCanvas.strokeStyle = "blue";
-    contextCanvas.fillStyle = "white";
     contextCanvas.lineWidth = 1;
+    contextCanvas.fillStyle = "white";
 
     for (const handle of this.getHighlightBoxes()) {
       contextCanvas.beginPath();
@@ -571,88 +636,79 @@ class shape {
   }
 
   getRotationHandle(){
-    const anchor = this.getRotationAnchor();
-    if (anchor === null) return null;
-    const direction = normalizeVector(this.getRotationDirection());
-    return {
-      anchor,
-      circle: {
-        x: anchor.x + direction.x * rotationStemLength,
-        y: anchor.y + direction.y * rotationStemLength,
-      },
+    const anchorLocal = this.getRotationAnchor();
+    if (anchorLocal === null) return null;
+
+    const directionLocal = normalizeVector(this.getRotationDirection());
+    const circleLocal = {
+      x: anchorLocal.x + directionLocal.x * rotationStemLength,
+      y: anchorLocal.y + directionLocal.y * rotationStemLength,
     };
-  }
-
-  resize(){
-    return false;
-  }
-
-  translate(){
-    return false;
-  }
-
-  rotateToPoint(){
-    return false;
-  }
-
-  hasZeroSize(){
-    return false;
-  }
-
-  getTextEditorInfo(){
-    const dx = this.location[1].x - this.location[0].x;
-    const dy = this.location[1].y - this.location[0].y;
-    const angle = Math.atan2(dy, dx);
-    const textSize = this.textSize || 14;
-    const rotated = rotateOffset({ x: 5, y: -textSize - 5 }, angle);
 
     return {
-      point: {
-        x: this.location[0].x + rotated.x,
-        y: this.location[0].y + rotated.y,
-      },
-      angle,
-      width: 240,
-      height: textSize,
-      align: "left",
-      vAlign: "top"
+      anchor: this.localToWorld(anchorLocal),
+      circle: this.localToWorld(circleLocal),
     };
-  }
-
-  collissionCheck(point){
-    throw new Error("Method collissionCheck must be implemented by subclass");
-  }
-
-  getLinkAtPoint(point) {
-    return null;
   }
 }
 
-class line extends shape{
-  constructor(location, borderColor, borderWidth, text = null, textSize = null, color = null, fillColor = null, textFont = null){
+class line extends shape {
+  constructor(location = null, borderColor = null, borderWidth = null, text = null, textSize = null, color = null, fillColor = null, textFont = null) {
     super(location, borderColor, borderWidth, text, textSize, color, fillColor, textFont);
+  }
+
+  getCenter(){
+    return {
+      x: (this.location[0].x + this.location[1].x) / 2,
+      y: (this.location[0].y + this.location[1].y) / 2,
+    };
   }
 
   getHighlightBoxes(){
     return [
-      { name: "start", point: this.location[0] },
-      { name: "end", point: this.location[1] },
+      { name: "start", point: makePoint(this.location[0]) },
+      { name: "end", point: makePoint(this.location[1]) },
     ];
   }
 
   getRotationAnchor(){
-    return this.getCenter();
+    return { x: 0, y: 0 };
   }
 
   getRotationDirection(){
     const dx = this.location[1].x - this.location[0].x;
     const dy = this.location[1].y - this.location[0].y;
-    return normalizeVector({ x: dy, y: -dx });
+    const length = Math.sqrt(dx * dx + dy * dy);
+    if (length === 0) return { x: 0, y: -1 };
+    return {
+      x: -dy / length,
+      y: dx / length,
+    };
   }
 
-  draw(contextCanvas, isSelected = false){
-    if (contextCanvas === null) throw new Error("Canvas Not Loaded");
+  getRotationHandle(){
+    const dx = this.location[1].x - this.location[0].x;
+    const dy = this.location[1].y - this.location[0].y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    if (length === 0) return null;
 
+    const midPoint = this.getCenter();
+    const normal = {
+      x: -dy / length,
+      y: dx / length,
+    };
+
+    return {
+      anchor: midPoint,
+      circle: {
+        x: midPoint.x + normal.x * rotationStemLength,
+        y: midPoint.y + normal.y * rotationStemLength,
+      },
+    };
+  }
+
+  draw(contextCanvas) {
+    contextCanvas.save();
     contextCanvas.strokeStyle = this.borderColor;
     contextCanvas.lineWidth = this.borderWidth;
     contextCanvas.beginPath();
@@ -664,14 +720,16 @@ class line extends shape{
       const dx = this.location[1].x - this.location[0].x;
       const dy = this.location[1].y - this.location[0].y;
       const angle = Math.atan2(dy, dx);
-      const textHeight = getRichTextHeight(this.text, 240, this.textSize, this.textFont || "Arial");
+      const opts = this.getFormattingOptions();
+      const textHeight = getRichTextHeight(this.text, 240, this.textSize, this.textFont || "Arial", opts);
 
       contextCanvas.save();
       contextCanvas.translate(this.location[0].x, this.location[0].y);
       contextCanvas.rotate(angle);
-      renderRichText(contextCanvas, this.text, 5, -5 - textHeight, 240, this.textSize, this.textFont || "Arial", this.color, "left", "top");
+      renderRichText(contextCanvas, this.text, 5, -5 - textHeight, 240, this.textSize, this.textFont || "Arial", this.color, opts.textAlign, opts.verticalAlign, null, opts);
       contextCanvas.restore();
     }
+    contextCanvas.restore();
   }
 
   getTextEditorInfo(){
@@ -679,43 +737,37 @@ class line extends shape{
     const dy = this.location[1].y - this.location[0].y;
     const angle = Math.atan2(dy, dx);
     const textSize = this.textSize || 14;
-    const textHeight = getRichTextHeight(this.text, 240, textSize, this.textFont || "Arial");
-    const rotated = rotateOffset({ x: 5, y: -5 - textHeight }, angle);
+    const opts = this.getFormattingOptions();
+    const textHeight = getRichTextHeight(this.text, 240, textSize, this.textFont || "Arial", opts);
+
+    const rotatedOffset = rotateOffset({ x: 5, y: -5 - textHeight }, angle);
 
     return {
       point: {
-        x: this.location[0].x + rotated.x,
-        y: this.location[0].y + rotated.y,
+        x: this.location[0].x + rotatedOffset.x,
+        y: this.location[0].y + rotatedOffset.y,
       },
-      angle,
       width: 240,
-      height: textHeight,
-      align: "left",
-      vAlign: "top"
+      height: Math.max(20, textHeight),
+      angle: angle,
+      align: opts.textAlign,
+      vAlign: opts.verticalAlign
     };
   }
 
   collissionCheck(point){
-    const distance = pointToSegmentDistance(
+    return pointToSegmentDistance(
       point.x,
       point.y,
       this.location[0].x,
       this.location[0].y,
       this.location[1].x,
       this.location[1].y
-    );
-    const textBounds = this.getTextBounds();
-    let textHit = false;
-    if (textBounds) {
-      const localPoint = textBounds.worldToLocal(point);
-      textHit = localPoint.x >= 0 && localPoint.x <= textBounds.width &&
-                localPoint.y >= 0 && localPoint.y <= textBounds.height;
-    }
-    return distance <= hitboxSize + this.borderWidth / 2 || textHit;
+    ) <= (hitboxSize + this.borderWidth / 2);
   }
 
   distanceToPoint(point) {
-    const segmentDist = pointToSegmentDistance(
+    return pointToSegmentDistance(
       point.x,
       point.y,
       this.location[0].x,
@@ -723,15 +775,6 @@ class line extends shape{
       this.location[1].x,
       this.location[1].y
     );
-    const textBounds = this.getTextBounds();
-    if (textBounds) {
-      const localPoint = textBounds.worldToLocal(point);
-      if (localPoint.x >= 0 && localPoint.x <= textBounds.width &&
-          localPoint.y >= 0 && localPoint.y <= textBounds.height) {
-        return 0;
-      }
-    }
-    return Math.max(0, segmentDist - this.borderWidth / 2);
   }
 
   getLinkAtPoint(point) {
@@ -739,27 +782,30 @@ class line extends shape{
     const dx = this.location[1].x - this.location[0].x;
     const dy = this.location[1].y - this.location[0].y;
     const angle = Math.atan2(dy, dx);
+    const opts = this.getFormattingOptions();
+    const textHeight = getRichTextHeight(this.text, 240, this.textSize, this.textFont || "Arial", opts);
 
     const cos = Math.cos(-angle);
     const sin = Math.sin(-angle);
     const relX = point.x - this.location[0].x;
     const relY = point.y - this.location[0].y;
-    const localX = relX * cos - relY * sin;
-    const localY = relX * sin + relY * cos;
-
-    const textSize = this.textSize || 14;
-    const textHeight = getRichTextHeight(this.text, 240, textSize, this.textFont || "Arial");
+    const localPoint = {
+      x: relX * cos - relY * sin,
+      y: relX * sin + relY * cos,
+    };
 
     return getRichTextLinkAtPoint(
       this.text,
-      { x: localX, y: localY },
+      localPoint,
       5,
       -5 - textHeight,
       240,
-      textSize,
+      this.textSize || 14,
       this.textFont || "Arial",
-      "left",
-      "top"
+      opts.textAlign,
+      opts.verticalAlign,
+      null,
+      opts
     );
   }
 
@@ -813,41 +859,56 @@ class line extends shape{
   }
 
   getTextBounds(){
-    if (this.text === null || this.textSize === null || this.textSize === 0) {
-      return null;
-    }
+    if (!this.text || (this.textSize === null || this.textSize === 0)) return null;
     const dx = this.location[1].x - this.location[0].x;
     const dy = this.location[1].y - this.location[0].y;
     const angle = Math.atan2(dy, dx);
-    const textSize = this.textSize || 14;
-    const textHeight = getRichTextHeight(this.text, 240, textSize, this.textFont || "Arial");
-    const origin = { x: this.location[0].x, y: this.location[0].y };
+    const opts = this.getFormattingOptions();
+    const textHeight = getRichTextHeight(this.text, 240, this.textSize, this.textFont || "Arial", opts);
 
     return {
+      x: this.location[0].x,
+      y: this.location[0].y - textHeight - 5,
       width: 240,
       height: textHeight,
-      worldToLocal: (point) => {
-        const relX = point.x - origin.x;
-        const relY = point.y - origin.y;
-        const cos = Math.cos(-angle);
-        const sin = Math.sin(-angle);
-        const localX = relX * cos - relY * sin - 5;
-        const localY = relX * sin + relY * cos - (-5 - textHeight);
-        return { x: localX, y: localY };
-      },
+      rotation: angle,
     };
   }
 }
 
-class rectangle extends shape{
-  constructor(location, borderColor, borderWidth, text = null, textSize = null, color = null, fillColor = null, textFont = null){
+class rectangle extends shape {
+  constructor(location = null, borderColor = null, borderWidth = null, text = null, textSize = null, color = null, fillColor = null, textFont = null) {
     super(location, borderColor, borderWidth, text, textSize, color, fillColor, textFont);
-    this.rotation = 0;
   }
 
-  draw(contextCanvas, isSelected = false){
-    if (contextCanvas === null) throw new Error("Canvas Not Loaded");
+  getHighlightBoxes(){
+    const halfWidth = this.getWidth() / 2;
+    const halfHeight = this.getHeight() / 2;
 
+    const handles = [
+      { name: "topLeft", local: { x: -halfWidth, y: -halfHeight } },
+      { name: "topRight", local: { x: halfWidth, y: -halfHeight } },
+      { name: "bottomLeft", local: { x: -halfWidth, y: halfHeight } },
+      { name: "bottomRight", local: { x: halfWidth, y: halfHeight } },
+    ];
+
+    return [
+      ...handles.map((handle) => ({
+        name: handle.name,
+        point: this.localToWorld(handle.local),
+      })),
+    ];
+  }
+
+  getRotationAnchor(){
+    return { x: 0, y: -this.getHeight() / 2 };
+  }
+
+  getRotationDirection(){
+    return { x: 0, y: -1 };
+  }
+
+  draw(contextCanvas) {
     const width = this.getWidth();
     const height = this.getHeight();
     const center = this.getCenter();
@@ -856,14 +917,15 @@ class rectangle extends shape{
     contextCanvas.translate(center.x, center.y);
     contextCanvas.rotate(this.rotation);
 
-    if(this.fillColor !== null && this.fillColor !== undefined) {
+    if (this.fillColor !== null && this.fillColor !== "transparent" && this.fillColor !== undefined) {
       contextCanvas.fillStyle = this.fillColor;
       contextCanvas.fillRect(-width / 2, -height / 2, width, height);
     }
 
     let drawBorderColor = this.borderColor;
     let drawBorderWidth = this.borderWidth;
-    if (isSelected && (drawBorderColor === "transparent" || drawBorderWidth === 0 || drawBorderWidth == null)) {
+
+    if (drawBorderWidth === 0 && (drawBorderColor === "transparent" || drawBorderColor == null)) {
       drawBorderColor = "blue";
       drawBorderWidth = 1;
     }
@@ -875,17 +937,15 @@ class rectangle extends shape{
     }
 
     if(!this.isEditingText && this.text !== null && (this.textSize !== null && this.textSize != 0)){
-      const padding = 5;
+      const opts = this.getFormattingOptions();
+      const padding = opts.padding;
       const maxTextWidth = Math.max(0, width - padding * 2);
       const maxTextHeight = Math.max(0, height - padding * 2);
-      const textSize = this.textSize || 14;
-      const textHeight = getRichTextHeight(this.text, maxTextWidth, textSize, this.textFont || "Arial");
 
       contextCanvas.save();
       contextCanvas.beginPath();
       contextCanvas.rect(-width / 2, -height / 2, width, height);
       contextCanvas.clip();
-
       renderRichText(
         contextCanvas,
         this.text,
@@ -895,9 +955,10 @@ class rectangle extends shape{
         this.textSize,
         this.textFont || "Arial",
         this.color,
-        "left",
-        "bottom",
-        maxTextHeight
+        opts.textAlign,
+        opts.verticalAlign,
+        maxTextHeight,
+        opts
       );
       contextCanvas.restore();
     }
@@ -913,62 +974,29 @@ class rectangle extends shape{
     return Math.abs(this.location[1].y - this.location[0].y);
   }
 
-  worldToLocal(point, customCenter = null){
-    const center = customCenter || this.getCenter();
-    const dx = point.x - center.x;
-    const dy = point.y - center.y;
-    const cos = Math.cos(-this.rotation);
-    const sin = Math.sin(-this.rotation);
-    return {
-      x: dx * cos - dy * sin,
-      y: dx * sin + dy * cos,
-    };
-  }
-
-  localToWorld(localPoint, customCenter = null){
-    const center = customCenter || this.getCenter();
-    const cos = Math.cos(this.rotation);
-    const sin = Math.sin(this.rotation);
-    return {
-      x: center.x + localPoint.x * cos - localPoint.y * sin,
-      y: center.y + localPoint.x * sin + localPoint.y * cos,
-    };
-  }
-
-  getRotationAnchor(){
-    const halfHeight = this.getHeight() / 2;
-    return this.localToWorld({ x: 0, y: -halfHeight });
-  }
-
-  getRotationDirection(){
+  getTextEditorInfo(){
     const center = this.getCenter();
-    const anchor = this.getRotationAnchor();
-    return normalizeVector({
-      x: anchor.x - center.x,
-      y: anchor.y - center.y,
-    });
-  }
+    const width = this.getWidth();
+    const height = this.getHeight();
+    const opts = this.getFormattingOptions();
+    const padding = opts.padding;
 
-  getHighlightBoxes(){
-    const halfWidth = this.getWidth() / 2;
-    const halfHeight = this.getHeight() / 2;
-    const handles = [
-      { name: "topLeft", local: { x: -halfWidth, y: -halfHeight } },
-      { name: "top", local: { x: 0, y: -halfHeight } },
-      { name: "topRight", local: { x: halfWidth, y: -halfHeight } },
-      { name: "left", local: { x: -halfWidth, y: 0 } },
-      { name: "right", local: { x: halfWidth, y: 0 } },
-      { name: "bottomLeft", local: { x: -halfWidth, y: halfHeight } },
-      { name: "bottom", local: { x: 0, y: halfHeight } },
-      { name: "bottomRight", local: { x: halfWidth, y: halfHeight } },
-    ];
+    const innerWidth = Math.max(10, width - padding * 2);
+    const innerHeight = Math.max(10, height - padding * 2);
 
-    return [
-      ...handles.map((handle) => ({
-        name: handle.name,
-        point: this.localToWorld(handle.local),
-      })),
-    ];
+    const topLeftWorld = this.localToWorld({
+      x: -width / 2 + padding,
+      y: -height / 2 + padding,
+    }, center);
+
+    return {
+      point: topLeftWorld,
+      width: innerWidth,
+      height: innerHeight,
+      angle: this.rotation,
+      align: opts.textAlign,
+      vAlign: opts.verticalAlign
+    };
   }
 
   updateSecondLocation(secondLocation){
@@ -996,6 +1024,7 @@ class rectangle extends shape{
     const localPoint = this.worldToLocal(point);
     const halfWidth = this.getWidth() / 2;
     const halfHeight = this.getHeight() / 2;
+
     const dx = Math.max(0, Math.abs(localPoint.x) - halfWidth);
     const dy = Math.max(0, Math.abs(localPoint.y) - halfHeight);
     return Math.sqrt(dx * dx + dy * dy);
@@ -1005,10 +1034,10 @@ class rectangle extends shape{
     if (!this.text || this.isEditingText) return null;
     const width = this.getWidth();
     const height = this.getHeight();
-    const padding = 5;
+    const opts = this.getFormattingOptions();
+    const padding = opts.padding;
     const maxTextWidth = Math.max(0, width - padding * 2);
     const maxTextHeight = Math.max(0, height - padding * 2);
-    const textSize = this.textSize || 14;
 
     const localPoint = this.worldToLocal(point);
 
@@ -1018,71 +1047,35 @@ class rectangle extends shape{
       -width / 2 + padding,
       -height / 2 + padding,
       maxTextWidth,
-      textSize,
+      this.textSize || 14,
       this.textFont || "Arial",
-      "center",
-      "center",
-      maxTextHeight
+      opts.textAlign,
+      opts.verticalAlign,
+      maxTextHeight,
+      opts
     );
-  }
-
-  getTextEditorInfo() {
-    const width = this.getWidth();
-    const height = this.getHeight();
-    const padding = 5;
-    const maxTextWidth = Math.max(0, width - padding * 2);
-    const maxTextHeight = Math.max(0, height - padding * 2);
-    const textSize = this.textSize || 14;
-
-    const textHeight = getRichTextHeight(this.text, maxTextWidth, textSize, this.textFont || "Arial");
-
-    return {
-      point: this.localToWorld({
-        x: -width / 2 + padding,
-        y: -height / 2 + padding,
-      }),
-      angle: this.rotation,
-      width: maxTextWidth,
-      height: Math.max(maxTextHeight, textHeight),
-      align: "left",
-      vAlign: "bottom"
-    };
   }
 
   resize(handleName, point){
     const center = this.getCenter();
     const localPoint = this.worldToLocal(point, center);
-    const halfWidth = this.getWidth() / 2;
-    const halfHeight = this.getHeight() / 2;
 
-    let left = -halfWidth;
-    let right = halfWidth;
-    let top = -halfHeight;
-    let bottom = halfHeight;
+    let left = -this.getWidth() / 2;
+    let right = this.getWidth() / 2;
+    let top = -this.getHeight() / 2;
+    let bottom = this.getHeight() / 2;
 
     switch (handleName) {
       case "topLeft":
         left = localPoint.x;
         top = localPoint.y;
         break;
-      case "top":
-        top = localPoint.y;
-        break;
       case "topRight":
         right = localPoint.x;
         top = localPoint.y;
         break;
-      case "left":
-        left = localPoint.x;
-        break;
-      case "right":
-        right = localPoint.x;
-        break;
       case "bottomLeft":
         left = localPoint.x;
-        bottom = localPoint.y;
-        break;
-      case "bottom":
         bottom = localPoint.y;
         break;
       case "bottomRight":
@@ -1100,8 +1093,8 @@ class rectangle extends shape{
       x: (left + right) / 2,
       y: (top + bottom) / 2,
     };
-    const newCenterWorld = this.localToWorld(newCenterLocal, center);
 
+    const newCenterWorld = this.localToWorld(newCenterLocal, center);
     const newHalfWidth = (right - left) / 2;
     const newHalfHeight = (bottom - top) / 2;
 
@@ -1109,6 +1102,7 @@ class rectangle extends shape{
       { x: newCenterWorld.x - newHalfWidth, y: newCenterWorld.y - newHalfHeight },
       { x: newCenterWorld.x + newHalfWidth, y: newCenterWorld.y + newHalfHeight },
     ];
+
     return true;
   }
 
@@ -1133,56 +1127,43 @@ class rectangle extends shape{
 }
 
 class oval extends rectangle {
-  constructor(location, borderColor, borderWidth, text = null, textSize = null, color = null, fillColor = null, textFont = null) {
+  constructor(location = null, borderColor = null, borderWidth = null, text = null, textSize = null, color = null, fillColor = null, textFont = null) {
     super(location, borderColor, borderWidth, text, textSize, color, fillColor, textFont);
   }
 
-  draw(contextCanvas, isSelected = false) {
-    if (contextCanvas === null) throw new Error("Canvas Not Loaded");
-
+  draw(contextCanvas) {
     const width = this.getWidth();
     const height = this.getHeight();
     const center = this.getCenter();
-    const rx = width / 2;
-    const ry = height / 2;
 
     contextCanvas.save();
     contextCanvas.translate(center.x, center.y);
     contextCanvas.rotate(this.rotation);
 
     contextCanvas.beginPath();
-    contextCanvas.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    contextCanvas.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
 
-    if (this.fillColor !== null && this.fillColor !== undefined) {
+    if (this.fillColor !== null && this.fillColor !== "transparent" && this.fillColor !== undefined) {
       contextCanvas.fillStyle = this.fillColor;
       contextCanvas.fill();
     }
 
-    let drawBorderColor = this.borderColor;
-    let drawBorderWidth = this.borderWidth;
-    if (isSelected && (drawBorderColor === "transparent" || drawBorderWidth === 0 || drawBorderWidth == null)) {
-      drawBorderColor = "blue";
-      drawBorderWidth = 1;
-    }
-
-    if (drawBorderWidth > 0 && drawBorderWidth != null) {
-      contextCanvas.strokeStyle = drawBorderColor;
-      contextCanvas.lineWidth = drawBorderWidth;
+    if(this.borderWidth > 0 && this.borderColor !== null){
+      contextCanvas.strokeStyle = this.borderColor;
+      contextCanvas.lineWidth = this.borderWidth;
       contextCanvas.stroke();
     }
 
-    if (!this.isEditingText && this.text !== null && (this.textSize !== null && this.textSize != 0)) {
-      const padding = 5;
+    if(!this.isEditingText && this.text !== null && (this.textSize !== null && this.textSize != 0)){
+      const opts = this.getFormattingOptions();
+      const padding = opts.padding;
       const maxTextWidth = Math.max(0, width - padding * 2);
       const maxTextHeight = Math.max(0, height - padding * 2);
-      const textSize = this.textSize || 14;
-      const textHeight = getRichTextHeight(this.text, maxTextWidth, textSize, this.textFont || "Arial");
 
       contextCanvas.save();
       contextCanvas.beginPath();
-      contextCanvas.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      contextCanvas.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
       contextCanvas.clip();
-
       renderRichText(
         contextCanvas,
         this.text,
@@ -1192,9 +1173,10 @@ class oval extends rectangle {
         this.textSize,
         this.textFont || "Arial",
         this.color,
-        "center",
-        "center",
-        maxTextHeight
+        opts.textAlign,
+        opts.verticalAlign,
+        maxTextHeight,
+        opts
       );
       contextCanvas.restore();
     }
@@ -1212,61 +1194,48 @@ class oval extends rectangle {
 
     const normX = localPoint.x / (rx + hitrange);
     const normY = localPoint.y / (ry + hitrange);
+
     return (normX * normX + normY * normY) <= 1;
   }
 
-  getTextEditorInfo() {
-    const info = super.getTextEditorInfo();
-    info.align = "center";
-    info.vAlign = "center";
-    return info;
+  distanceToPoint(point) {
+    const localPoint = this.worldToLocal(point);
+    const rx = this.getWidth() / 2;
+    const ry = this.getHeight() / 2;
+
+    if (rx <= 0 || ry <= 0) return Infinity;
+
+    const normX = localPoint.x / rx;
+    const normY = localPoint.y / ry;
+    const distSq = normX * normX + normY * normY;
+
+    if (distSq <= 1) return 0;
+    return (Math.sqrt(distSq) - 1) * Math.min(rx, ry);
   }
 }
 
 class image extends rectangle {
-  constructor(location, fillColor = "transparent", borderWidth = 0, borderColor = "#000000", text = null, textSize = 14, color = "#000000", textFont = "Arial", imageSrc = null) {
-    super(location, fillColor, borderWidth, text, textSize, color, fillColor, textFont);
-    /*
-    this.location = location;
-    this.fillColor = fillColor;
-    this.borderWidth = borderWidth;
-    this.borderColor = borderColor;
-    this.text = text;
-    this.textSize = textSize;
-    this.color = color;
-    this.textFont = textFont;
-    */
+  constructor(location = null, borderColor = null, borderWidth = null, text = null, textSize = null, color = null, fillColor = null, textFont = null, imageSrc = null) {
+    super(location, borderColor, borderWidth, text, textSize, color, fillColor, textFont);
     this.imageSrc = imageSrc;
     this.imgElement = null;
     this.isLoaded = false;
-
     if (imageSrc) {
       this.loadImage(imageSrc);
     }
   }
 
-  getTextEditorInfo() {
-    const info = super.getTextEditorInfo();
-    info.align = "center";
-    info.vAlign = "center";
-    return info;
-  }
-
   loadImage(src, callback) {
-    this.imageSrc = src;
-    this.isLoaded = false;
     const img = new Image();
-
-    if (src.startsWith('/api/v1/uploads/') || src.startsWith('http')) {
-      const jwtToken = getCookieValue('auth');
-      const version = getCookieValue('version');
-      const authHeader = jwtToken ? `Bearer ${jwtToken}${version ? ',' + version : ''}` : null;
-
+    const token = getCookieValue('authtoken');
+    if (token) {
       fetch(src, {
-        headers: authHeader ? { 'Authorization': authHeader } : {}
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       })
       .then(res => {
-        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+        if (!res.ok) throw new Error('Image fetch failed');
         return res.blob();
       })
       .then(blob => {
@@ -1313,15 +1282,16 @@ class image extends rectangle {
 
     contextCanvas.save();
     contextCanvas.translate(center.x, center.y);
+    contextCanvas.rotate(this.rotation);
 
     if (this.isLoaded && this.imgElement) {
       contextCanvas.drawImage(this.imgElement, -width / 2, -height / 2, width, height);
     } else {
-      contextCanvas.fillStyle = '#f0f0f0';
+      contextCanvas.fillStyle = "#e0e0e0";
       contextCanvas.fillRect(-width / 2, -height / 2, width, height);
     }
 
-    if (this.borderWidth > 0 && this.borderColor) {
+    if (this.borderWidth > 0 && this.borderColor && this.borderColor !== "transparent") {
       contextCanvas.strokeStyle = this.borderColor;
       contextCanvas.lineWidth = this.borderWidth;
       contextCanvas.strokeRect(-width / 2, -height / 2, width, height);
@@ -1330,4 +1300,5 @@ class image extends rectangle {
     contextCanvas.restore();
   }
 }
+
 export { line, rectangle, oval, image };
