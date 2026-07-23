@@ -1313,47 +1313,70 @@ function RenderPDFEditor() {
             ...
           </button>
           {showMoreOptions && (
-            <div className="more-options-popover">
-              <div className="more-options-section">
-                <span className="more-options-label">Horizontal Align</span>
-                <div className="more-options-btn-group">
-                  <button className={`toolbar-button ${formatting.textAlign === 'left' ? 'active' : ''}`} onClick={() => updateFormatting('textAlign', 'left')}>Left</button>
-                  <button className={`toolbar-button ${formatting.textAlign === 'center' ? 'active' : ''}`} onClick={() => updateFormatting('textAlign', 'center')}>Center</button>
-                  <button className={`toolbar-button ${formatting.textAlign === 'right' ? 'active' : ''}`} onClick={() => updateFormatting('textAlign', 'right')}>Right</button>
-                  <button className={`toolbar-button ${formatting.textAlign === 'justify' ? 'active' : ''}`} onClick={() => updateFormatting('textAlign', 'justify')}>Justify</button>
+            <div 
+              className="more-options-popover"
+              style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: '6px',
+                width: '280px',
+                maxHeight: 'calc(100vh - 80px)',
+                overflowY: 'auto',
+                backgroundColor: '#ffffff',
+                border: '1px solid #ccc',
+                borderRadius: '6px',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+                padding: '12px',
+                zIndex: 1000
+              }}
+            >
+              <div className="more-options-section" style={{ marginBottom: '10px', borderBottom: '1px solid #eee', paddingBottom: '8px' }}>
+                <span className="more-options-label" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#555', marginBottom: '6px' }}>Horizontal Align</span>
+                <div className="more-options-btn-group" style={{ display: 'flex', gap: '4px' }}>
+                  <button style={{ flex: 1 }} className={`toolbar-button ${formatting.textAlign === 'left' ? 'active' : ''}`} onClick={() => updateFormatting('textAlign', 'left')}>Left</button>
+                  <button style={{ flex: 1 }} className={`toolbar-button ${formatting.textAlign === 'center' ? 'active' : ''}`} onClick={() => updateFormatting('textAlign', 'center')}>Center</button>
+                  <button style={{ flex: 1 }} className={`toolbar-button ${formatting.textAlign === 'right' ? 'active' : ''}`} onClick={() => updateFormatting('textAlign', 'right')}>Right</button>
+                  <button style={{ flex: 1 }} className={`toolbar-button ${formatting.textAlign === 'justify' ? 'active' : ''}`} onClick={() => updateFormatting('textAlign', 'justify')}>Justify</button>
                 </div>
               </div>
-              <div className="more-options-section">
-                <span className="more-options-label">Vertical Align</span>
-                <div className="more-options-btn-group">
-                  <button className={`toolbar-button ${formatting.verticalAlign === 'top' ? 'active' : ''}`} onClick={() => updateFormatting('verticalAlign', 'top')}>Top</button>
-                  <button className={`toolbar-button ${formatting.verticalAlign === 'center' ? 'active' : ''}`} onClick={() => updateFormatting('verticalAlign', 'center')}>Middle</button>
-                  <button className={`toolbar-button ${formatting.verticalAlign === 'bottom' ? 'active' : ''}`} onClick={() => updateFormatting('verticalAlign', 'bottom')}>Bottom</button>
+
+              <div className="more-options-section" style={{ marginBottom: '10px', borderBottom: '1px solid #eee', paddingBottom: '8px' }}>
+                <span className="more-options-label" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#555', marginBottom: '6px' }}>Vertical Align</span>
+                <div className="more-options-btn-group" style={{ display: 'flex', gap: '4px' }}>
+                  <button style={{ flex: 1 }} className={`toolbar-button ${formatting.verticalAlign === 'top' ? 'active' : ''}`} onClick={() => updateFormatting('verticalAlign', 'top')}>Top</button>
+                  <button style={{ flex: 1 }} className={`toolbar-button ${formatting.verticalAlign === 'center' ? 'active' : ''}`} onClick={() => updateFormatting('verticalAlign', 'center')}>Middle</button>
+                  <button style={{ flex: 1 }} className={`toolbar-button ${formatting.verticalAlign === 'bottom' ? 'active' : ''}`} onClick={() => updateFormatting('verticalAlign', 'bottom')}>Bottom</button>
                 </div>
               </div>
-              <div className="more-options-section">
-                <span className="more-options-label">Letter Spacing</span>
-                <input type="number" step="0.5" value={formatting.letterSpacing} onChange={(e) => updateFormatting('letterSpacing', e.target.value)} style={{ width: '60px' }} />
+
+              <div className="more-options-section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span className="more-options-label" style={{ fontSize: '12px', fontWeight: '500' }}>Letter Spacing</span>
+                <input type="number" step="0.5" value={formatting.letterSpacing} onChange={(e) => updateFormatting('letterSpacing', e.target.value)} style={{ width: '60px', padding: '2px 4px' }} />
               </div>
-              <div className="more-options-section">
-                <span className="more-options-label">Line Height</span>
-                <input type="number" step="0.1" min="0.5" max="3" value={formatting.lineHeight} onChange={(e) => updateFormatting('lineHeight', e.target.value)} style={{ width: '60px' }} />
+
+              <div className="more-options-section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span className="more-options-label" style={{ fontSize: '12px', fontWeight: '500' }}>Line Height</span>
+                <input type="number" step="0.1" min="0.5" max="3" value={formatting.lineHeight} onChange={(e) => updateFormatting('lineHeight', e.target.value)} style={{ width: '60px', padding: '2px 4px' }} />
               </div>
-              <div className="more-options-section">
-                <span className="more-options-label">Padding</span>
-                <input type="number" min="0" max="50" value={formatting.padding} onChange={(e) => updateFormatting('padding', e.target.value)} style={{ width: '60px' }} />
+
+              <div className="more-options-section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span className="more-options-label" style={{ fontSize: '12px', fontWeight: '500' }}>Padding</span>
+                <input type="number" min="0" max="50" value={formatting.padding} onChange={(e) => updateFormatting('padding', e.target.value)} style={{ width: '60px', padding: '2px 4px' }} />
               </div>
-              <div className="more-options-section">
-                <span className="more-options-label">Text Transform</span>
-                <select value={formatting.textTransform} onChange={(e) => updateFormatting('textTransform', e.target.value)}>
+
+              <div className="more-options-section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <span className="more-options-label" style={{ fontSize: '12px', fontWeight: '500' }}>Text Transform</span>
+                <select value={formatting.textTransform} onChange={(e) => updateFormatting('textTransform', e.target.value)} style={{ padding: '2px 4px' }}>
                   <option value="none">None</option>
                   <option value="uppercase">Uppercase</option>
                   <option value="lowercase">Lowercase</option>
                   <option value="capitalize">Capitalize</option>
                 </select>
               </div>
-              <div className="more-options-section" style={{ borderBottom: 'none' }}>
-                <button className={`toolbar-button ${formatting.isStrikethrough ? 'active' : ''}`} onClick={() => updateFormatting('isStrikethrough', !formatting.isStrikethrough)} style={{ textDecoration: 'line-through', width: '100%' }}>
+
+              <div className="more-options-section">
+                <button className={`toolbar-button ${formatting.isStrikethrough ? 'active' : ''}`} onClick={() => updateFormatting('isStrikethrough', !formatting.isStrikethrough)} style={{ textDecoration: 'line-through', width: '100%', padding: '6px' }}>
                   Strikethrough
                 </button>
               </div>
@@ -1392,7 +1415,7 @@ function RenderPDFEditor() {
                   height: '1000px', 
                   backgroundColor: '#ffffff', 
                   boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                  border: '1px solid #ccc' // Put any page border here on the wrapper div
+                  border: '1px solid #ccc'
                 }}
               >
                 <canvas 
@@ -1425,12 +1448,12 @@ function RenderPDFEditor() {
                 />
               </div>
             ))}
+            {pages.length < MAX_PAGES && (
+              <button onClick={handleAddPage} style={{ marginTop: '20px', padding: '8px 16px', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                Add Page
+              </button>
+            )}
           </div>
-          {pages.length < MAX_PAGES && (
-            <button onClick={handleAddPage} style={{ marginTop: '20px', padding: '8px 16px', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-              Add Page
-            </button>
-          )}
         </main>
       </div>
 
