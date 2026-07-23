@@ -15,8 +15,24 @@ canvas {
     width: 200px;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    height: auto;
+    align-items: stretch;
+    gap: 10px;
+    padding: 15px 10px;
+    background-color: #f8f9fa;
+    border-right: 1px solid #e0e0e0;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+#button-col .toolbar-button {
+    width: 100%;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+.toolbar-button.active {
+    background-color: #007bff;
+    color: #ffffff;
 }
 
 .chrome-picker {
@@ -32,14 +48,14 @@ input {
     width: 100px;
 }
 
-#document_background {
+canvas[id^="document_background"] {
     z-index: 1;
     background-color: #ffffff;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     border: 1px solid #e2e8f0;
 }
 
-#document_foreground {
+canvas[id^="document_foreground"] {
     z-index: 2;
     background-color: transparent;
 }
@@ -55,7 +71,7 @@ input {
 }
 
 #options-bar {
-    display: none;
+    display: flex;
     justify-content: center;
     padding: 10px;
     flex-direction: column;
