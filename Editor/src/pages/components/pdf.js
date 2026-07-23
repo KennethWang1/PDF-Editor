@@ -1,12 +1,13 @@
 import './pdf.css';
 import React, { useState, useEffect, useRef } from 'react';
-import { line, rectangle, oval } from './shapes.js';
+import { line, rectangle, oval, image } from './shapes.js';
 
 let backgroundCanvas = null, foregroundCanvas = null, lastClick = null, shapes = [], drawType = null, selectedShape = null, selectedHandle = null, interactionMode = null, createDragged = false;
 const createDragThreshold = 2;
-let inlineTextInput = null, inlineTextShape = null;
+let inlineTextInput = null, inlineTextInputWrapper = null, inlineTextShape = null;
 let syncStateCallback = null;
 let updateFormattingRef = null;
+let zoomLevel = 1.0;
 
 let defaultFormatting = {
   textSize: 14,
@@ -17,6 +18,13 @@ let defaultFormatting = {
   borderColor: "#000000",
   fillColor: null
 };
+
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
+  return null;
+}
 
 function checkHtmlFormattingState(htmlText, command) {
   if (!htmlText || typeof document === 'undefined') return false;
@@ -153,16 +161,19 @@ function commitInlineTextInput() {
 
 function removeInlineTextInput() {
   const input = inlineTextInput;
-  
+  const wrapper = inlineTextInputWrapper;
+
   if (inlineTextShape) {
     inlineTextShape.isEditingText = false; 
   }
-  
+
   inlineTextInput = null;
+  inlineTextInputWrapper = null;
   inlineTextShape = null;
 
-  if (!input) return;
-  if (input.parentNode) {
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.removeChild(wrapper);
+  } else if (input && input.parentNode) {
     input.parentNode.removeChild(input);
   }
 }
@@ -179,29 +190,38 @@ function updateInlineTextInputPosition() {
 
   const canvasRect = canvas.getBoundingClientRect();
   const editorRect = editor.getBoundingClientRect();
-  
-  const left = canvasRect.left - editorRect.left + info.point.x;
-  const top = canvasRect.top - editorRect.top + info.point.y;
 
-  inlineTextInput.style.width = `${info.width}px`;
-  
-  if (inlineTextShape instanceof rectangle || inlineTextShape instanceof oval) {
-    inlineTextInput.style.minHeight = `${info.height}px`;
-    inlineTextInput.style.height = "auto";
-    inlineTextInput.style.display = "flex";
-    inlineTextInput.style.flexDirection = "column";
-    inlineTextInput.style.justifyContent = info.vAlign === "center" ? "center" : (info.vAlign === "bottom" ? "flex-end" : "flex-start");
+  const left = canvasRect.left - editorRect.left + info.point.x * zoomLevel;
+  const top = canvasRect.top - editorRect.top + info.point.y * zoomLevel;
+
+  const wrapper = inlineTextInputWrapper || inlineTextInput;
+
+  wrapper.style.left = `${left}px`;
+  wrapper.style.top = `${top}px`;
+  wrapper.style.width = `${info.width * zoomLevel}px`;
+  wrapper.style.height = `${info.height * zoomLevel}px`;
+  wrapper.style.transform = `rotate(${info.angle || 0}rad)`;
+
+  if (inlineTextInput) {
+    const scaledFontSize = (inlineTextShape.textSize || 14) * zoomLevel;
+    inlineTextInput.style.fontSize = `${scaledFontSize}px`;
+    const calculatedLineHeight = Math.max(12 * zoomLevel, Math.ceil(scaledFontSize * 1.2));
+    inlineTextInput.style.lineHeight = `${calculatedLineHeight}px`;
+  }
+
+  if (inlineTextInputWrapper) {
+    inlineTextInputWrapper.style.display = "flex";
+    inlineTextInputWrapper.style.flexDirection = "column";
+    inlineTextInputWrapper.style.justifyContent = info.vAlign === "center" ? "center" : (info.vAlign === "bottom" ? "flex-end" : "flex-start");
+
+    inlineTextInput.style.width = "100%";
+    inlineTextInput.style.display = "block";
     inlineTextInput.style.textAlign = info.align || "left";
   } else {
-    inlineTextInput.style.height = `${info.height}px`;
+    inlineTextInput.style.height = `${info.height * zoomLevel}px`;
     inlineTextInput.style.display = "block";
-    inlineTextInput.style.textAlign = "left";
+    inlineTextInput.style.textAlign = info.align || "left";
   }
-  
-  inlineTextInput.style.left = `${left}px`;
-  inlineTextInput.style.top = `${top}px`;
-  
-  inlineTextInput.style.transform = `rotate(${info.angle || 0}rad)`;
 }
 
 function openInlineTextInput(shape) {
@@ -215,36 +235,42 @@ function openInlineTextInput(shape) {
 
   const info = shape.getTextEditorInfo ? shape.getTextEditorInfo() : {};
 
+  const wrapper = document.createElement("div");
+  wrapper.style.position = "absolute";
+  wrapper.style.zIndex = "10";
+  wrapper.style.padding = "0px";
+  wrapper.style.margin = "0px";
+  wrapper.style.boxSizing = "border-box";
+  wrapper.style.transformOrigin = "left top";
+  wrapper.style.pointerEvents = "none";
+  wrapper.style.display = "flex";
+  wrapper.style.flexDirection = "column";
+  wrapper.style.justifyContent = info.vAlign === "center" ? "center" : (info.vAlign === "bottom" ? "flex-end" : "flex-start");
+
   const input = document.createElement("div");
   input.contentEditable = "true";
-  
+
   input.innerHTML = shape.text == null ? "" : shape.text;
-  
-  input.style.position = "absolute";
-  input.style.zIndex = "10";
+
+  const scaledFontSize = (shape.textSize || 14) * zoomLevel;
   input.style.padding = "0px";
   input.style.margin = "0px";
-  input.style.fontSize = `${shape.textSize}px`;
+  input.style.fontSize = `${scaledFontSize}px`;
   input.style.fontFamily = shape.textFont;
-  
-  const calculatedLineHeight = Math.max(12, Math.ceil((shape.textSize || 14) * 1.2));
+
+  const calculatedLineHeight = Math.max(12 * zoomLevel, Math.ceil(scaledFontSize * 1.2));
   input.style.lineHeight = `${calculatedLineHeight}px`;
   input.style.color = shape.color;
   input.style.border = "1px dashed blue";
   input.style.background = "transparent";
   input.style.outline = "none";
-  input.style.transformOrigin = "left top";
-  input.style.overflow = "hidden";
   input.style.boxSizing = "border-box";
   input.style.whiteSpace = "pre-wrap";
   input.style.wordBreak = "break-word";
-
-  if (shape instanceof rectangle || shape instanceof oval) {
-    input.style.display = "flex";
-    input.style.flexDirection = "column";
-    input.style.justifyContent = info.vAlign === "center" ? "center" : (info.vAlign === "bottom" ? "flex-end" : "flex-start");
-    input.style.textAlign = info.align || "left";
-  }
+  input.style.display = "block";
+  input.style.width = "100%";
+  input.style.textAlign = info.align || "left";
+  input.style.pointerEvents = "auto";
 
   input.addEventListener("input", () => {
     shape.text = input.innerHTML;
@@ -259,7 +285,7 @@ function openInlineTextInput(shape) {
   input.addEventListener("click", (evt) => {
     const link = evt.target && evt.target.closest ? evt.target.closest("a") : null;
     if (link && evt.button === 0) {
-      evt.preventDefault(); // Prevent opening links on left click
+      evt.preventDefault();
     }
     if (syncStateCallback) syncStateCallback();
   });
@@ -267,7 +293,7 @@ function openInlineTextInput(shape) {
   input.addEventListener("contextmenu", (evt) => {
     const link = evt.target && evt.target.closest ? evt.target.closest("a") : null;
     if (!link) {
-      evt.preventDefault(); // Suppress default right-click menu unless right-clicking a link
+      evt.preventDefault();
     }
   });
 
@@ -294,7 +320,7 @@ function openInlineTextInput(shape) {
         }
       }
     }
-    
+
     if (!(shape instanceof rectangle || shape instanceof oval) && evt.key === "Enter") {
       evt.preventDefault();
       commitInlineTextInput();
@@ -305,15 +331,18 @@ function openInlineTextInput(shape) {
     }
   });
 
-  editor.appendChild(input);
+  wrapper.appendChild(input);
+  editor.appendChild(wrapper);
+
   inlineTextInput = input;
+  inlineTextInputWrapper = wrapper;
   inlineTextShape = shape;
-  
+
   updateInlineTextInputPosition();
   redrawScene(interactionMode === "edit"); 
-  
+
   input.focus();
-  
+
   const selection = window.getSelection();
   const range = document.createRange();
   range.selectNodeContents(input);
@@ -326,21 +355,6 @@ function openInlineTextInput(shape) {
     if (defaultFormatting.isItalic) document.execCommand('italic', false, null);
     if (defaultFormatting.isUnderline) document.execCommand('underline', false, null);
   }
-}
-
-function closeInlineTextInput() {
-  if (!inlineTextInput || !inlineTextShape) return;
-  const rawText = inlineTextInput.innerHTML;
-  const plainText = inlineTextInput.textContent || inlineTextInput.innerText || "";
-  inlineTextShape.text = plainText.trim() === "" ? null : rawText;
-  
-  if (inlineTextInput.parentNode) {
-    inlineTextInput.parentNode.removeChild(inlineTextInput);
-  }
-  inlineTextInput = null;
-  inlineTextShape = null;
-  redrawScene();
-  if (syncStateCallback) syncStateCallback();
 }
 
 function findNearestShapeAtPoint(point) {
@@ -393,8 +407,8 @@ function mouseMoveHandler(event){
   if (interactionMode === "create-click") {
     let canvas = document.getElementById("document_foreground");
     let rect = canvas.getBoundingClientRect();
-    let eventX = event.clientX - rect.left;
-    let eventY = event.clientY - rect.top;
+    let eventX = (event.clientX - rect.left) / zoomLevel;
+    let eventY = (event.clientY - rect.top) / zoomLevel;
     selectedShape.updateSecondLocation({x: eventX, y: eventY});
     redrawScene(true);
     return;
@@ -403,8 +417,8 @@ function mouseMoveHandler(event){
   if(lastClick === null) return;
   let canvas = document.getElementById("document_foreground");
   let rect = canvas.getBoundingClientRect();
-  let eventX = event.clientX - rect.left;
-  let eventY = event.clientY - rect.top;
+  let eventX = (event.clientX - rect.left) / zoomLevel;
+  let eventY = (event.clientY - rect.top) / zoomLevel;
 
   if (interactionMode === "resize" && selectedHandle !== null) {
     selectedShape.resize(selectedHandle, {x: eventX, y: eventY});
@@ -428,13 +442,13 @@ function mouseMoveHandler(event){
 }
 
 function mouseDoubleClickHandler(event) {
-  if (event.button !== 0) return; // Only process left double-click
+  if (event.button !== 0) return;
   if (interactionMode === "create" || interactionMode === "create-click") return;
 
   let canvas = document.getElementById("document_foreground");
   let rect = canvas.getBoundingClientRect();
-  let clickX = event.clientX - rect.left;
-  let clickY = event.clientY - rect.top;
+  let clickX = (event.clientX - rect.left) / zoomLevel;
+  let clickY = (event.clientY - rect.top) / zoomLevel;
   const clickPoint = { x: clickX, y: clickY };
 
   const targetShape = findNearestShapeAtPoint(clickPoint);
@@ -454,8 +468,8 @@ function contextMenuHandler(event) {
   if (!canvas) return;
 
   let rect = canvas.getBoundingClientRect();
-  let clickX = event.clientX - rect.left;
-  let clickY = event.clientY - rect.top;
+  let clickX = (event.clientX - rect.left) / zoomLevel;
+  let clickY = (event.clientY - rect.top) / zoomLevel;
   const clickPoint = { x: clickX, y: clickY };
 
   const targetShape = findNearestShapeAtPoint(clickPoint);
@@ -507,14 +521,14 @@ function finishInteraction(){
 }
 
 function mouseDownHandler(event){
-  if (event.button !== 0) return; // Only process left-click for canvas operations
+  if (event.button !== 0) return;
 
   commitInlineTextInput();
 
   let canvas = document.getElementById("document_foreground");
   let rect = canvas.getBoundingClientRect();
-  let clickX = event.clientX - rect.left;
-  let clickY = event.clientY - rect.top;
+  let clickX = (event.clientX - rect.left) / zoomLevel;
+  let clickY = (event.clientY - rect.top) / zoomLevel;
   const clickPoint = { x: clickX, y: clickY };
 
   if (interactionMode === "create-click" && selectedShape !== null) {
@@ -678,6 +692,9 @@ function load(){
       case "oval":
         temp = new oval(item.location, item.borderColor, item.borderWidth, item.text, item.textSize, item.color, item.fillColor, item.textFont);
         break;
+      case "image":
+        temp = new image(item.location, item.borderColor || "transparent", item.borderWidth || 0, item.text, item.textSize, item.color, item.fillColor, item.textFont, item.imageSrc);
+        break;
       default:
         temp = null
         break;
@@ -769,10 +786,213 @@ function ColorPickerDropdown({ icon, value, onChange, allowTransparent, isOpen, 
 function RenderPDFEditor(){
   const [formatting, setFormatting] = useState(defaultFormatting);
   const [activeDropdown, setActiveDropdown] = useState(null);
+  const fileInputRef = useRef(null);
+  const viewportRef = useRef(null);
+  const [zoom, setZoom] = useState(1.0);
+  const zoomRef = useRef(1.0);
   const [dimensions, setDimensions] = useState({
-    width: window.innerWidth - 240,
-    height: window.innerHeight
+    width: 816,
+    height: 1056
   });
+  const [showImagesModal, setShowImagesModal] = useState(false);
+  const [userImages, setUserImages] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const getAuthTokenHeader = () => {
+    const getCookie = (name) => {
+      if (typeof document === 'undefined') return null;
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop().split(';').shift();
+      return null;
+    };
+    const auth = getCookie('auth') || (typeof localStorage !== 'undefined' ? localStorage.getItem('auth') : null);
+    const version = getCookie('version') || (typeof localStorage !== 'undefined' ? localStorage.getItem('version') : '1');
+    if (auth) {
+      return `Bearer ${auth},${version}`;
+    }
+    return null;
+  };
+
+  const updateZoom = (newZoom) => {
+    const clamped = Math.min(Math.max(0.25, Math.round(newZoom * 100) / 100), 4.0);
+    zoomLevel = clamped;
+    zoomRef.current = clamped;
+    setZoom(clamped);
+    redrawScene(interactionMode === "edit");
+  };
+
+  const handleZoomIn = () => updateZoom(zoom + 0.1);
+  const handleZoomOut = () => updateZoom(zoom - 0.1);
+  const handleResetZoom = () => updateZoom(1.0);
+
+  const handleOpenImagesModal = async () => {
+    const jwt = getCookie('auth');
+    const version = getCookie('version');
+
+    if (!jwt) {
+      alert('Please log in to manage your images.');
+      return;
+    }
+
+    setShowImagesModal(true);
+
+    try {
+      const res = await fetch('/api/v1/my-images', {
+        headers: { 'Authorization': `Bearer ${jwt}${version ? ',' + version : ''}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUserImages(data.files || []);
+      } else {
+        console.error('Failed to load user images:', data.error);
+      }
+    } catch (err) {
+      console.error('Error fetching gallery:', err);
+    }
+  };
+
+  const handleImageUpload = async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const jwt = getCookie('auth');
+    const version = getCookie('version');
+
+    if (!jwt) {
+      alert('You must be logged in to upload images.');
+      return;
+    }
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('/api/v1/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${jwt}${version ? ',' + version : ''}`
+        },
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(`Upload failed: ${data.error || response.statusText}`);
+        return;
+      }
+
+      const newImageObj = { filename: data.url.split('/').pop(), url: data.url };
+      setUserImages(prev => [newImageObj, ...prev]);
+
+      handleSelectImage(data.url);
+
+    } catch (err) {
+      console.error('Image upload error:', err);
+      alert('An error occurred while uploading the image.');
+    } finally {
+      setIsUploading(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleSelectImage = (imageUrl) => {
+    const canvas = document.getElementById("document_foreground");
+    const cw = canvas ? canvas.width / (window.devicePixelRatio || 1) : 800;
+    const ch = canvas ? canvas.height / (window.devicePixelRatio || 1) : 600;
+
+    const imgWidth = 200;
+    const imgHeight = 150;
+    const startX = Math.max(20, (cw - imgWidth) / 2);
+    const startY = Math.max(20, (ch - imgHeight) / 2);
+
+    const newImgShape = new image(
+      [{ x: startX, y: startY }, { x: startX + imgWidth, y: startY + imgHeight }],
+      "transparent", 0, null, null, null, null, "Arial", imageUrl
+    );
+
+    newImgShape.loadImage(imageUrl, () => {
+      shapes.push(newImgShape);
+      selectedShape = newImgShape;
+      redrawScene(true);
+    });
+
+    setShowImagesModal(false);
+  };
+
+  const handleImageSelect = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const authToken = getAuthTokenHeader();
+    const headers = {};
+    if (authToken) {
+      headers['Authorization'] = authToken;
+    }
+
+    fetch('/api/v1/upload', {
+      method: 'POST',
+      headers,
+      body: formData
+    })
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then((errData) => {
+            throw new Error(errData.error || 'Upload failed');
+          });
+        }
+        return res.json();
+      })
+      .then((data) => {
+        const imageUrl = data.url;
+        const canvas = document.getElementById("document_foreground");
+        const cw = canvas ? canvas.width / (window.devicePixelRatio || 1) : 800;
+        const ch = canvas ? canvas.height / (window.devicePixelRatio || 1) : 600;
+
+        const imgWidth = 200;
+        const imgHeight = 150;
+        const startX = Math.max(20, (cw - imgWidth) / 2);
+        const startY = Math.max(20, (ch - imgHeight) / 2);
+
+        const newImgShape = new image(
+          [{ x: startX, y: startY }, { x: startX + imgWidth, y: startY + imgHeight }],
+          "transparent",
+          0,
+          null,
+          null,
+          null,
+          null,
+          "Arial",
+          imageUrl
+        );
+
+        newImgShape.loadImage(imageUrl, () => {
+          redrawScene(true);
+        }, authToken);
+
+        shapes.push(newImgShape);
+        selectedShape = newImgShape;
+        interactionMode = "edit";
+        if (syncStateCallback) syncStateCallback();
+        redrawScene(true);
+
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+      })
+      .catch((err) => {
+        alert('Image upload failed: ' + err.message);
+        console.error('Image upload error:', err);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+      });
+  };
 
   useEffect(() => {
     onMount();
@@ -797,17 +1017,7 @@ function RenderPDFEditor(){
       }
     };
 
-    function handleResize() {
-      setDimensions({
-        width: window.innerWidth - 240,
-        height: window.innerHeight
-      });
-    }
-
-    window.addEventListener("resize", handleResize);
-
     return () => {
-      window.removeEventListener("resize", handleResize);
       let canvas = document.getElementById("document_foreground");
       if (canvas) {
         canvas.removeEventListener("mousedown", mouseDownHandler);
@@ -825,6 +1035,74 @@ function RenderPDFEditor(){
   }, []);
 
   useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    let initialPinchDist = null;
+    let initialPinchZoom = 1.0;
+
+    const handleWheel = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const delta = -e.deltaY * 0.002;
+        const currentZoom = zoomRef.current;
+        const nextZoom = Math.min(Math.max(0.25, currentZoom + delta), 4.0);
+        zoomLevel = nextZoom;
+        zoomRef.current = nextZoom;
+        setZoom(nextZoom);
+        redrawScene(interactionMode === "edit");
+      }
+    };
+
+    const handleTouchStart = (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        initialPinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        initialPinchZoom = zoomRef.current;
+      }
+    };
+
+    const handleTouchMove = (e) => {
+      if (e.touches.length === 2 && initialPinchDist) {
+        e.preventDefault();
+        const currentDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const scale = currentDist / initialPinchDist;
+        const nextZoom = Math.min(Math.max(0.25, initialPinchZoom * scale), 4.0);
+        zoomLevel = nextZoom;
+        zoomRef.current = nextZoom;
+        setZoom(nextZoom);
+        redrawScene(interactionMode === "edit");
+      }
+    };
+
+    const handleTouchEnd = (e) => {
+      if (e.touches.length < 2) {
+        initialPinchDist = null;
+      }
+    };
+
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    viewport.addEventListener('touchstart', handleTouchStart, { passive: false });
+    viewport.addEventListener('touchmove', handleTouchMove, { passive: false });
+    viewport.addEventListener('touchend', handleTouchEnd);
+    viewport.addEventListener('touchcancel', handleTouchEnd);
+
+    return () => {
+      viewport.removeEventListener('wheel', handleWheel);
+      viewport.removeEventListener('touchstart', handleTouchStart);
+      viewport.removeEventListener('touchmove', handleTouchMove);
+      viewport.removeEventListener('touchend', handleTouchEnd);
+      viewport.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, []);
+
+  useEffect(() => {
     redrawScene(false);
   }, [dimensions]);
 
@@ -833,8 +1111,9 @@ function RenderPDFEditor(){
       if (key === 'textSize') {
         selectedShape.textSize = value;
         if (inlineTextInput) {
-          inlineTextInput.style.fontSize = `${value}px`;
-          inlineTextInput.style.lineHeight = `${Math.max(12, Math.ceil(value * 1.2))}px`;
+          const scaledSize = value * zoomLevel;
+          inlineTextInput.style.fontSize = `${scaledSize}px`;
+          inlineTextInput.style.lineHeight = `${Math.max(12 * zoomLevel, Math.ceil(scaledSize * 1.2))}px`;
         }
       }
       
@@ -889,13 +1168,14 @@ function RenderPDFEditor(){
   const canvasHeight = dimensions.height;
 
   return (
-    <div id="pdf-editor" style={{ display: "flex", width: "100vw", height: "100vh", overflow: "hidden" }}>
-      <div style={{ width: "240px", background: "#f0f0f0", borderRight: "1px solid #ccc", padding: "10px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: "10px" }}>
+    <div id="pdf-editor" style={{ display: "flex", flexDirection: "row", width: "100vw", height: "100vh", overflow: "hidden" }}>
+      <div style={{ width: "240px", flexShrink: 0, height: "100%", background: "#f0f0f0", borderRight: "1px solid #ccc", padding: "10px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: "10px", overflowY: "auto" }}>
         <h3>Controls</h3>
         <button onClick={() => { drawType = "line"; if(interactionMode === "edit") { selectedShape = null; interactionMode = null; redrawScene(false); } }}>Line</button>
         <button onClick={() => { drawType = "rectangle"; if(interactionMode === "edit") { selectedShape = null; interactionMode = null; redrawScene(false); } }}>Rectangle</button>
         <button onClick={() => { drawType = "oval"; if(interactionMode === "edit") { selectedShape = null; interactionMode = null; redrawScene(false); } }}>Oval</button>
         <button onClick={() => { drawType = "textbox"; if(interactionMode === "edit") { selectedShape = null; interactionMode = null; redrawScene(false); } }}>Textbox</button>
+        <input type="file" ref={fileInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleImageSelect} />
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '10px', borderTop: '1px solid #ccc', paddingTop: '10px' }}>
           <h4>Formatting</h4>
@@ -981,22 +1261,206 @@ function RenderPDFEditor(){
               />
             </TooltipWrapper>
           )}
+
+          <TooltipWrapper text="Images">
+            <button className="toolbar-btn" onClick={handleOpenImagesModal}>
+              🖼️ Images
+            </button>
+          </TooltipWrapper>
+          {showImagesModal && (
+            <div style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000,
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              <div style={{
+                background: '#ffffff',
+                padding: '24px',
+                borderRadius: '8px',
+                width: '520px',
+                maxWidth: '90%',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h2 style={{ margin: 0, fontSize: '18px' }}>Images</h2>
+                  <button 
+                    onClick={() => setShowImagesModal(false)}
+                    style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div style={{
+                  border: '2px dashed #cccccc',
+                  padding: '16px',
+                  borderRadius: '6px',
+                  textAlign: 'center',
+                  backgroundColor: '#fafafa',
+                  marginBottom: '20px'
+                }}>
+                  <p style={{ margin: '0 0 8px 0', fontWeight: 'bold', fontSize: '14px' }}>Upload New Image</p>
+                  <label style={{
+                    display: 'inline-block',
+                    padding: '8px 16px',
+                    backgroundColor: '#007bff',
+                    color: '#ffffff',
+                    borderRadius: '4px',
+                    cursor: isUploading ? 'not-allowed' : 'pointer',
+                    fontSize: '13px'
+                  }}>
+                    {isUploading ? 'Uploading...' : '📁 Choose File from Device'}
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      style={{ display: 'none' }} 
+                      onChange={handleImageUpload}
+                      disabled={isUploading}
+                    />
+                  </label>
+                </div>
+
+                <div>
+                  <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#555' }}>Your Saved Images</h4>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '10px',
+                    maxHeight: '240px',
+                    overflowY: 'auto',
+                    paddingRight: '4px'
+                  }}>
+                    {userImages.length === 0 ? (
+                      <p style={{ gridColumn: 'span 3', color: '#888', textAlign: 'center', margin: '20px 0' }}>
+                        No images uploaded yet.
+                      </p>
+                    ) : (
+                      userImages.map((img) => (
+                        <div
+                          key={img.filename}
+                          onClick={() => handleSelectImage(img.url)}
+                          style={{
+                            border: '1px solid #ddd',
+                            borderRadius: '4px',
+                            overflow: 'hidden',
+                            cursor: 'pointer',
+                            height: '90px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: '#f9f9f9',
+                            transition: 'border-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.borderColor = '#007bff'}
+                          onMouseLeave={(e) => e.currentTarget.style.borderColor = '#ddd'}
+                        >
+                          <img
+                            src={img.url}
+                            alt={img.filename}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '20px', textAlign: 'right' }}>
+                  <button 
+                    onClick={() => setShowImagesModal(false)}
+                    style={{ padding: '6px 16px', borderRadius: '4px', border: '1px solid #ccc', cursor: 'pointer' }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
-      <div style={{ position: "relative", flex: 1, height: "100%" }}>
-        <canvas 
-          id="document_background" 
-          width={canvasWidth * dpr} 
-          height={canvasHeight * dpr}
-          style={{ position: "absolute", left: 0, top: 0, width: `${canvasWidth}px`, height: `${canvasHeight}px` }}
-        />
-        <canvas 
-          id="document_foreground" 
-          width={canvasWidth * dpr} 
-          height={canvasHeight * dpr}
-          style={{ position: "absolute", left: 0, top: 0, width: `${canvasWidth}px`, height: `${canvasHeight}px` }}
-        />
+      <div 
+        ref={viewportRef}
+        style={{ 
+          position: "relative", 
+          flex: 1, 
+          width: "100%", 
+          height: "100%", 
+          overflow: "auto", 
+          background: "#ffffff", 
+          display: "flex", 
+          justifyContent: "center", 
+          alignItems: "flex-start", 
+          padding: "40px 20px 90px 20px", 
+          boxSizing: "border-box" 
+        }}
+      >
+        <div style={{ position: "relative", width: `${canvasWidth * zoom}px`, height: `${canvasHeight * zoom}px`, flexShrink: 0 }}>
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: `${canvasWidth}px`,
+              height: `${canvasHeight}px`,
+              transform: `scale(${zoom})`,
+              transformOrigin: "0 0"
+            }}
+          >
+            <canvas 
+              id="document_background" 
+              width={canvasWidth * dpr} 
+              height={canvasHeight * dpr}
+              style={{ position: "absolute", left: 0, top: 0, width: `${canvasWidth}px`, height: `${canvasHeight}px` }}
+            />
+            <canvas 
+              id="document_foreground" 
+              width={canvasWidth * dpr} 
+              height={canvasHeight * dpr}
+              style={{ position: "absolute", left: 0, top: 0, width: `${canvasWidth}px`, height: `${canvasHeight}px` }}
+            />
+          </div>
+        </div>
+
+        <div style={{
+          position: "fixed",
+          bottom: "20px",
+          left: "calc(50% + 120px)",
+          transform: "translateX(-50%)",
+          backgroundColor: "#ffffff",
+          border: "1px solid #ccc",
+          borderRadius: "20px",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.15)",
+          padding: "6px 16px",
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+          zIndex: 100
+        }}>
+          <button 
+            onClick={handleZoomOut}
+            disabled={zoom <= 0.25}
+            style={{ border: "none", background: "none", cursor: zoom <= 0.25 ? "default" : "pointer", fontSize: "16px", padding: "2px 6px", opacity: zoom <= 0.25 ? 0.4 : 1 }}
+            title="Zoom Out"
+          >
+            −
+          </button>
+          <span 
+            onClick={handleResetZoom}
+            style={{ fontSize: "13px", fontWeight: "bold", minWidth: "45px", textAlign: "center", cursor: "pointer", userSelect: "none" }}
+            title="Reset Zoom (100%)"
+          >
+            {Math.round(zoom * 100)}%
+          </span>
+          <button 
+            onClick={handleZoomIn}
+            disabled={zoom >= 4.0}
+            style={{ border: "none", background: "none", cursor: zoom >= 4.0 ? "default" : "pointer", fontSize: "16px", padding: "2px 6px", opacity: zoom >= 4.0 ? 0.4 : 1 }}
+            title="Zoom In"
+          >
+            +
+          </button>
+        </div>
       </div>
     </div>
   );

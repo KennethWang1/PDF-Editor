@@ -1,13 +1,13 @@
-canvas{
+canvas {
     position: absolute;
-    width: auto;
-    height: auto;
-    top:0px;
-    left:100px;
+    width: 100%;
+    height: 100%;
+    top: 0px;
+    left: 0px;
     display: block;
 }
 
-#button-col{
+#button-col {
     position: relative;
     top: 0px;
     left: 0px;
@@ -18,37 +18,39 @@ canvas{
     height: auto;
 }
 
-.chrome-picker{
+.chrome-picker {
     position: relative;
-    width:100px;
+    width: 100px;
     z-index: 100;
-    left:0;
+    left: 0;
     display: block;
     align-self: flex-end;
 }
 
-input{
+input {
     width: 100px;
 }
 
-#document_background{
+#document_background {
     z-index: 1;
+    background-color: #ffffff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border: 1px solid #e2e8f0;
 }
 
-#document_foreground{
+#document_foreground {
     z-index: 2;
-    background-color: rgba(255, 255, 255, 0.2);
+    background-color: transparent;
 }
 
-#type_select{
+#type_select {
     position: relative;
-    z-index: 3;
+    z-index: 300;
     top: 10px;
     left: 10px;
     width: 20px;
     height: 5px;
     background-color: var(--hue950);
-    z-index: 300;
 }
 
 #options-bar {
@@ -57,7 +59,7 @@ input{
     padding: 10px;
     flex-direction: column;
     width: 70px;
-    align-items:normal;
+    align-items: normal;
 }
 
 #toolbar {
@@ -67,10 +69,10 @@ input{
     background-color: var(--hue200);
     border-bottom: 1px solid var(--hue400);
     color: var(--hue950);
-    z-index: 101; /* Ensure the toolbar is above other content */
-    width: 100%; /* Make it span the full width */
-    position: relative; /* Fix the toolbar at the top */
-    top: 0; /* Align it to the top */
+    z-index: 101;
+    width: 100%;
+    position: relative;
+    top: 0;
 }
 
 .toolbar-button {

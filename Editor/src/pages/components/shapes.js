@@ -1,3 +1,8 @@
+const hitboxSize = 2;
+const highlightBoxSize = 8;
+const rotationStemLength = 24;
+const rotationHandleRadius = 5;
+
 function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1;
   const dy = y2 - y1;
@@ -9,10 +14,11 @@ function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
   return Math.sqrt(Math.pow(projX - px, 2) + Math.pow(projY - py, 2));
 }
 
-const hitboxSize = 2;
-const highlightBoxSize = 8;
-const rotationStemLength = 24;
-const rotationHandleRadius = 5;
+function getCookieValue(name) {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? match[2] : null;
+} 
 
 function makePoint(point) {
   return { x: point.x, y: point.y };
@@ -167,7 +173,7 @@ function renderRichText(
   let startY = y;
 
   if (vAlign === "bottom") {
-    startY = Math.min(y, y + effectiveBoxHeight - totalHeight);
+    startY = Math.max(y, y + effectiveBoxHeight - totalHeight);
   } else if (vAlign === "center" || vAlign === "middle") {
     startY = y + (effectiveBoxHeight - totalHeight) / 2;
   }
@@ -186,7 +192,6 @@ function renderRichText(
 
     for (const item of lineItems) {
       context.font = item.font;
-      // Inherit user's default text color instead of forcing blue (#0066cc)
       const textColor = defaultColor;
       context.fillStyle = textColor;
       context.fillText(item.text, currentX, currentY);
@@ -329,7 +334,7 @@ function getRichTextLinkAtPoint(
   let startY = y;
 
   if (vAlign === "bottom") {
-    startY = Math.min(y, y + effectiveBoxHeight - totalHeight);
+    startY = Math.max(y, y + effectiveBoxHeight - totalHeight);
   } else if (vAlign === "center" || vAlign === "middle") {
     startY = y + (effectiveBoxHeight - totalHeight) / 2;
   }
@@ -479,24 +484,52 @@ class shape {
     this.color = color;
     this.fillColor = fillColor;
     this.textFont = textFont;
-    this.selected = false;
     this.isEditingText = false;
   }
+  
+  drawHighlightBox(contextCanvas){
+    if (contextCanvas === null) throw new Error("Canvas Not Loaded");
+    
+    contextCanvas.save();
+    contextCanvas.strokeStyle = "blue";
+    contextCanvas.fillStyle = "white";
+    contextCanvas.lineWidth = 1;
 
-  draw(contextCanvas, isSelected = false){
-    throw new Error("Method 'draw(contextCanvas)' must be implemented.");
+    for (const handle of this.getHighlightBoxes()) {
+      contextCanvas.beginPath();
+      contextCanvas.rect(
+        handle.point.x - highlightBoxSize / 2,
+        handle.point.y - highlightBoxSize / 2,
+        highlightBoxSize,
+        highlightBoxSize
+      );
+      contextCanvas.fill();
+      contextCanvas.stroke();
+    }
+
+    const rotationHandle = this.getRotationHandle();
+    if (rotationHandle !== null) {
+      contextCanvas.beginPath();
+      contextCanvas.moveTo(rotationHandle.anchor.x, rotationHandle.anchor.y);
+      contextCanvas.lineTo(rotationHandle.circle.x, rotationHandle.circle.y);
+      contextCanvas.stroke();
+
+      contextCanvas.beginPath();
+      contextCanvas.arc(
+        rotationHandle.circle.x,
+        rotationHandle.circle.y,
+        rotationHandleRadius,
+        0,
+        Math.PI * 2
+      );
+      contextCanvas.fill();
+      contextCanvas.stroke();
+    }
+
+    contextCanvas.restore();
   }
 
-  getHighlightBoxes(){
-    return [
-      { name: "topLeft", point: this.location[0] },
-      { name: "topRight", point: this.location[1] },
-      { name: "bottomLeft", point: this.location[0] },
-      { name: "bottomRight", point: this.location[1] },
-    ];
-  }
-
-  getHandleAtPoint(point){
+  getHandleAtPoint(point) {
     const halfSize = highlightBoxSize / 2;
     for (const handle of this.getHighlightBoxes()) {
       if (
@@ -540,7 +573,6 @@ class shape {
   getRotationHandle(){
     const anchor = this.getRotationAnchor();
     if (anchor === null) return null;
-
     const direction = normalizeVector(this.getRotationDirection());
     return {
       anchor,
@@ -572,8 +604,8 @@ class shape {
     const dy = this.location[1].y - this.location[0].y;
     const angle = Math.atan2(dy, dx);
     const textSize = this.textSize || 14;
-    
     const rotated = rotateOffset({ x: 5, y: -textSize - 5 }, angle);
+
     return {
       point: {
         x: this.location[0].x + rotated.x,
@@ -588,68 +620,15 @@ class shape {
   }
 
   collissionCheck(point){
-    throw new Error("Method collissionCheck(point) must be implemented");
+    throw new Error("Method collissionCheck must be implemented by subclass");
   }
 
   getLinkAtPoint(point) {
     return null;
   }
-
-  getRotationAngle() {
-    return 0;
-  }
-
-  drawHighlightBox(contextCanvas) {
-    if (contextCanvas === null) throw new Error("Canvas Not Loaded");
-
-    contextCanvas.strokeStyle = "blue";
-    contextCanvas.lineWidth = 0.25;
-    const angle = this.getRotationAngle();
-
-    this.getHighlightBoxes().forEach((handle) => {
-      contextCanvas.save();
-      contextCanvas.translate(handle.point.x, handle.point.y);
-      contextCanvas.rotate(angle);
-      contextCanvas.strokeRect(
-        -highlightBoxSize / 2,
-        -highlightBoxSize / 2,
-        highlightBoxSize,
-        highlightBoxSize
-      );
-      contextCanvas.restore();
-    });
-
-    const rotationHandle = this.getRotationHandle(); 
-    if (rotationHandle !== null) {
-      contextCanvas.beginPath();
-      contextCanvas.moveTo(rotationHandle.anchor.x, rotationHandle.anchor.y);
-      contextCanvas.lineTo(rotationHandle.circle.x, rotationHandle.circle.y);
-      contextCanvas.stroke();
-
-      contextCanvas.beginPath();
-      contextCanvas.arc(rotationHandle.circle.x, rotationHandle.circle.y, rotationHandleRadius, 0, Math.PI * 2);
-      contextCanvas.stroke();
-    }
-  }
-
-  updateSecondLocation(secondLocation){
-    this.location[1] = secondLocation;
-  }
 }
 
 class line extends shape{
-  getRotationAngle() {
-    const dx = this.location[1].x - this.location[0].x;
-    const dy = this.location[1].y - this.location[0].y;
-    return Math.atan2(dy, dx);
-  }
-
-  distanceToPoint(point) {
-    const x1 = this.location[0].x, y1 = this.location[0].y;
-    const x2 = this.location[1].x, y2 = this.location[1].y;
-    return pointToSegmentDistance(point.x, point.y, x1, y1, x2, y2);
-  }
-
   constructor(location, borderColor, borderWidth, text = null, textSize = null, color = null, fillColor = null, textFont = null){
     super(location, borderColor, borderWidth, text, textSize, color, fillColor, textFont);
   }
@@ -673,9 +652,9 @@ class line extends shape{
 
   draw(contextCanvas, isSelected = false){
     if (contextCanvas === null) throw new Error("Canvas Not Loaded");
+
     contextCanvas.strokeStyle = this.borderColor;
     contextCanvas.lineWidth = this.borderWidth;
-    
     contextCanvas.beginPath();
     contextCanvas.moveTo(this.location[0].x, this.location[0].y);
     contextCanvas.lineTo(this.location[1].x, this.location[1].y);
@@ -690,9 +669,7 @@ class line extends shape{
       contextCanvas.save();
       contextCanvas.translate(this.location[0].x, this.location[0].y);
       contextCanvas.rotate(angle);
-      
       renderRichText(contextCanvas, this.text, 5, -5 - textHeight, 240, this.textSize, this.textFont || "Arial", this.color, "left", "top");
-      
       contextCanvas.restore();
     }
   }
@@ -704,14 +681,14 @@ class line extends shape{
     const textSize = this.textSize || 14;
     const textHeight = getRichTextHeight(this.text, 240, textSize, this.textFont || "Arial");
     const rotated = rotateOffset({ x: 5, y: -5 - textHeight }, angle);
-    
+
     return {
       point: {
         x: this.location[0].x + rotated.x,
         y: this.location[0].y + rotated.y,
       },
       angle,
-      width: 240, 
+      width: 240,
       height: textHeight,
       align: "left",
       vAlign: "top"
@@ -719,46 +696,63 @@ class line extends shape{
   }
 
   collissionCheck(point){
-    const hitrange = hitboxSize + this.borderWidth;
-
-    if (this.distanceToPoint(point) <= hitrange) {
-      return true;
-    }
-
+    const distance = pointToSegmentDistance(
+      point.x,
+      point.y,
+      this.location[0].x,
+      this.location[0].y,
+      this.location[1].x,
+      this.location[1].y
+    );
     const textBounds = this.getTextBounds();
-    if (textBounds !== null) {
-      return (
-        point.x >= textBounds.left &&
-        point.x <= textBounds.right &&
-        point.y >= textBounds.top &&
-        point.y <= textBounds.bottom
-      );
+    let textHit = false;
+    if (textBounds) {
+      const localPoint = textBounds.worldToLocal(point);
+      textHit = localPoint.x >= 0 && localPoint.x <= textBounds.width &&
+                localPoint.y >= 0 && localPoint.y <= textBounds.height;
     }
+    return distance <= hitboxSize + this.borderWidth / 2 || textHit;
+  }
 
-    return false;
+  distanceToPoint(point) {
+    const segmentDist = pointToSegmentDistance(
+      point.x,
+      point.y,
+      this.location[0].x,
+      this.location[0].y,
+      this.location[1].x,
+      this.location[1].y
+    );
+    const textBounds = this.getTextBounds();
+    if (textBounds) {
+      const localPoint = textBounds.worldToLocal(point);
+      if (localPoint.x >= 0 && localPoint.x <= textBounds.width &&
+          localPoint.y >= 0 && localPoint.y <= textBounds.height) {
+        return 0;
+      }
+    }
+    return Math.max(0, segmentDist - this.borderWidth / 2);
   }
 
   getLinkAtPoint(point) {
-    if (!this.text) return null;
+    if (!this.text || this.isEditingText) return null;
     const dx = this.location[1].x - this.location[0].x;
     const dy = this.location[1].y - this.location[0].y;
     const angle = Math.atan2(dy, dx);
 
-    const relX = point.x - this.location[0].x;
-    const relY = point.y - this.location[0].y;
     const cos = Math.cos(-angle);
     const sin = Math.sin(-angle);
-    const localPoint = {
-      x: relX * cos - relY * sin,
-      y: relX * sin + relY * cos,
-    };
+    const relX = point.x - this.location[0].x;
+    const relY = point.y - this.location[0].y;
+    const localX = relX * cos - relY * sin;
+    const localY = relX * sin + relY * cos;
 
     const textSize = this.textSize || 14;
     const textHeight = getRichTextHeight(this.text, 240, textSize, this.textFont || "Arial");
 
     return getRichTextLinkAtPoint(
       this.text,
-      localPoint,
+      { x: localX, y: localY },
       5,
       -5 - textHeight,
       240,
@@ -769,8 +763,8 @@ class line extends shape{
     );
   }
 
-  containsPoint(point){
-    return this.collissionCheck(point);
+  updateSecondLocation(secondLocation){
+    this.location[1] = secondLocation;
   }
 
   resize(handleName, point){
@@ -778,12 +772,10 @@ class line extends shape{
       this.location[0] = makePoint(point);
       return true;
     }
-
     if (handleName === "end") {
       this.location[1] = makePoint(point);
       return true;
     }
-
     return false;
   }
 
@@ -792,7 +784,6 @@ class line extends shape{
       x: point.x + deltaX,
       y: point.y + deltaY,
     }));
-
     return true;
   }
 
@@ -814,7 +805,6 @@ class line extends shape{
         y: center.y + direction.y * halfLength,
       },
     ];
-
     return true;
   }
 
@@ -826,53 +816,30 @@ class line extends shape{
     if (this.text === null || this.textSize === null || this.textSize === 0) {
       return null;
     }
-
     const dx = this.location[1].x - this.location[0].x;
     const dy = this.location[1].y - this.location[0].y;
     const angle = Math.atan2(dy, dx);
-    
     const textSize = this.textSize || 14;
     const textHeight = getRichTextHeight(this.text, 240, textSize, this.textFont || "Arial");
-    const dimensions = approximateTextDimensions(this.text, this.textSize);
-    const width = Math.min(240, dimensions.width);
-
-    const corners = [
-      rotateOffset({ x: 5, y: -5 - textHeight }, angle),
-      rotateOffset({ x: 5 + width, y: -5 - textHeight }, angle),
-      rotateOffset({ x: 5, y: -5 }, angle),
-      rotateOffset({ x: 5 + width, y: -5 }, angle),
-    ].map((offset) => ({
-      x: this.location[0].x + offset.x,
-      y: this.location[0].y + offset.y,
-    }));
+    const origin = { x: this.location[0].x, y: this.location[0].y };
 
     return {
-      left: Math.min(...corners.map((corner) => corner.x)),
-      right: Math.max(...corners.map((corner) => corner.x)),
-      top: Math.min(...corners.map((corner) => corner.y)),
-      bottom: Math.max(...corners.map((corner) => corner.y)),
+      width: 240,
+      height: textHeight,
+      worldToLocal: (point) => {
+        const relX = point.x - origin.x;
+        const relY = point.y - origin.y;
+        const cos = Math.cos(-angle);
+        const sin = Math.sin(-angle);
+        const localX = relX * cos - relY * sin - 5;
+        const localY = relX * sin + relY * cos - (-5 - textHeight);
+        return { x: localX, y: localY };
+      },
     };
   }
 }
 
 class rectangle extends shape{
-  getRotationAngle() {
-    return this.rotation || 0;
-  }
-
-  distanceToPoint(point) {
-    const localPoint = this.worldToLocal(point);
-    const halfWidth = this.getWidth() / 2;
-    const halfHeight = this.getHeight() / 2;
-    let dx = Math.max(-halfWidth - localPoint.x, 0, localPoint.x - halfWidth);
-    let dy = Math.max(-halfHeight - localPoint.y, 0, localPoint.y - halfHeight);
-    if (dx === 0 || dy === 0) {
-      return Math.max(dx, dy);
-    } else {
-      return Math.sqrt(dx * dx + dy * dy);
-    }
-  }
-
   constructor(location, borderColor, borderWidth, text = null, textSize = null, color = null, fillColor = null, textFont = null){
     super(location, borderColor, borderWidth, text, textSize, color, fillColor, textFont);
     this.rotation = 0;
@@ -880,6 +847,7 @@ class rectangle extends shape{
 
   draw(contextCanvas, isSelected = false){
     if (contextCanvas === null) throw new Error("Canvas Not Loaded");
+
     const width = this.getWidth();
     const height = this.getHeight();
     const center = this.getCenter();
@@ -895,7 +863,6 @@ class rectangle extends shape{
 
     let drawBorderColor = this.borderColor;
     let drawBorderWidth = this.borderWidth;
-
     if (isSelected && (drawBorderColor === "transparent" || drawBorderWidth === 0 || drawBorderWidth == null)) {
       drawBorderColor = "blue";
       drawBorderWidth = 1;
@@ -910,6 +877,7 @@ class rectangle extends shape{
     if(!this.isEditingText && this.text !== null && (this.textSize !== null && this.textSize != 0)){
       const padding = 5;
       const maxTextWidth = Math.max(0, width - padding * 2);
+      const maxTextHeight = Math.max(0, height - padding * 2);
       const textSize = this.textSize || 14;
       const textHeight = getRichTextHeight(this.text, maxTextWidth, textSize, this.textFont || "Arial");
 
@@ -919,40 +887,22 @@ class rectangle extends shape{
       contextCanvas.clip();
 
       renderRichText(
-        contextCanvas, 
-        this.text, 
-        -width / 2 + padding, 
-        height / 2 - padding - textHeight, 
-        maxTextWidth, 
-        textSize, 
-        this.textFont || "Arial", 
-        this.color
+        contextCanvas,
+        this.text,
+        -width / 2 + padding,
+        -height / 2 + padding,
+        maxTextWidth,
+        this.textSize,
+        this.textFont || "Arial",
+        this.color,
+        "left",
+        "bottom",
+        maxTextHeight
       );
-
       contextCanvas.restore();
     }
 
     contextCanvas.restore();
-  }
-
-  getTextEditorInfo(){
-    const width = this.getWidth();
-    const height = this.getHeight();
-    const padding = 5;
-    const maxTextWidth = Math.max(0, width - padding * 2);
-    const textSize = this.textSize || 14;
-    
-    const textHeight = getRichTextHeight(this.text, maxTextWidth, textSize, this.textFont || "Arial");
-
-    return {
-      point: this.localToWorld({ 
-          x: -width / 2 + padding, 
-          y: height / 2 - padding - textHeight
-      }),
-      angle: this.rotation,
-      width: maxTextWidth,
-      height: textHeight
-    };
   }
 
   getWidth(){
@@ -963,7 +913,20 @@ class rectangle extends shape{
     return Math.abs(this.location[1].y - this.location[0].y);
   }
 
-  localToWorld(localPoint, center = this.getCenter()){
+  worldToLocal(point, customCenter = null){
+    const center = customCenter || this.getCenter();
+    const dx = point.x - center.x;
+    const dy = point.y - center.y;
+    const cos = Math.cos(-this.rotation);
+    const sin = Math.sin(-this.rotation);
+    return {
+      x: dx * cos - dy * sin,
+      y: dx * sin + dy * cos,
+    };
+  }
+
+  localToWorld(localPoint, customCenter = null){
+    const center = customCenter || this.getCenter();
     const cos = Math.cos(this.rotation);
     const sin = Math.sin(this.rotation);
     return {
@@ -972,19 +935,9 @@ class rectangle extends shape{
     };
   }
 
-  worldToLocal(worldPoint, center = this.getCenter()){
-    const dx = worldPoint.x - center.x;
-    const dy = worldPoint.y - center.y;
-    const cos = Math.cos(this.rotation);
-    const sin = Math.sin(this.rotation);
-    return {
-      x: dx * cos + dy * sin,
-      y: -dx * sin + dy * cos,
-    };
-  }
-
   getRotationAnchor(){
-    return this.localToWorld({ x: 0, y: -this.getHeight() / 2 });
+    const halfHeight = this.getHeight() / 2;
+    return this.localToWorld({ x: 0, y: -halfHeight });
   }
 
   getRotationDirection(){
@@ -999,7 +952,6 @@ class rectangle extends shape{
   getHighlightBoxes(){
     const halfWidth = this.getWidth() / 2;
     const halfHeight = this.getHeight() / 2;
-
     const handles = [
       { name: "topLeft", local: { x: -halfWidth, y: -halfHeight } },
       { name: "top", local: { x: 0, y: -halfHeight } },
@@ -1018,7 +970,7 @@ class rectangle extends shape{
       })),
     ];
   }
-  
+
   updateSecondLocation(secondLocation){
     this.location[1] = secondLocation;
   }
@@ -1040,14 +992,23 @@ class rectangle extends shape{
     return false;
   }
 
+  distanceToPoint(point) {
+    const localPoint = this.worldToLocal(point);
+    const halfWidth = this.getWidth() / 2;
+    const halfHeight = this.getHeight() / 2;
+    const dx = Math.max(0, Math.abs(localPoint.x) - halfWidth);
+    const dy = Math.max(0, Math.abs(localPoint.y) - halfHeight);
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
   getLinkAtPoint(point) {
-    if (!this.text) return null;
+    if (!this.text || this.isEditingText) return null;
     const width = this.getWidth();
     const height = this.getHeight();
     const padding = 5;
     const maxTextWidth = Math.max(0, width - padding * 2);
+    const maxTextHeight = Math.max(0, height - padding * 2);
     const textSize = this.textSize || 14;
-    const textHeight = getRichTextHeight(this.text, maxTextWidth, textSize, this.textFont || "Arial");
 
     const localPoint = this.worldToLocal(point);
 
@@ -1055,26 +1016,49 @@ class rectangle extends shape{
       this.text,
       localPoint,
       -width / 2 + padding,
-      height / 2 - padding - textHeight,
+      -height / 2 + padding,
       maxTextWidth,
       textSize,
       this.textFont || "Arial",
-      "left",
-      "top"
+      "center",
+      "center",
+      maxTextHeight
     );
   }
 
-  containsPoint(point){
-    return this.collissionCheck(point);
+  getTextEditorInfo() {
+    const width = this.getWidth();
+    const height = this.getHeight();
+    const padding = 5;
+    const maxTextWidth = Math.max(0, width - padding * 2);
+    const maxTextHeight = Math.max(0, height - padding * 2);
+    const textSize = this.textSize || 14;
+
+    const textHeight = getRichTextHeight(this.text, maxTextWidth, textSize, this.textFont || "Arial");
+
+    return {
+      point: this.localToWorld({
+        x: -width / 2 + padding,
+        y: -height / 2 + padding,
+      }),
+      angle: this.rotation,
+      width: maxTextWidth,
+      height: Math.max(maxTextHeight, textHeight),
+      align: "left",
+      vAlign: "bottom"
+    };
   }
 
   resize(handleName, point){
     const center = this.getCenter();
     const localPoint = this.worldToLocal(point, center);
-    let left = -this.getWidth() / 2;
-    let right = this.getWidth() / 2;
-    let top = -this.getHeight() / 2;
-    let bottom = this.getHeight() / 2;
+    const halfWidth = this.getWidth() / 2;
+    const halfHeight = this.getHeight() / 2;
+
+    let left = -halfWidth;
+    let right = halfWidth;
+    let top = -halfHeight;
+    let bottom = halfHeight;
 
     switch (handleName) {
       case "topLeft":
@@ -1117,14 +1101,14 @@ class rectangle extends shape{
       y: (top + bottom) / 2,
     };
     const newCenterWorld = this.localToWorld(newCenterLocal, center);
-    const halfWidth = (right - left) / 2;
-    const halfHeight = (bottom - top) / 2;
+
+    const newHalfWidth = (right - left) / 2;
+    const newHalfHeight = (bottom - top) / 2;
 
     this.location = [
-      { x: newCenterWorld.x - halfWidth, y: newCenterWorld.y - halfHeight },
-      { x: newCenterWorld.x + halfWidth, y: newCenterWorld.y + halfHeight },
+      { x: newCenterWorld.x - newHalfWidth, y: newCenterWorld.y - newHalfHeight },
+      { x: newCenterWorld.x + newHalfWidth, y: newCenterWorld.y + newHalfHeight },
     ];
-
     return true;
   }
 
@@ -1133,7 +1117,6 @@ class rectangle extends shape{
       x: point.x + deltaX,
       y: point.y + deltaY,
     }));
-
     return true;
   }
 
@@ -1156,66 +1139,64 @@ class oval extends rectangle {
 
   draw(contextCanvas, isSelected = false) {
     if (contextCanvas === null) throw new Error("Canvas Not Loaded");
+
     const width = this.getWidth();
     const height = this.getHeight();
     const center = this.getCenter();
+    const rx = width / 2;
+    const ry = height / 2;
 
     contextCanvas.save();
     contextCanvas.translate(center.x, center.y);
     contextCanvas.rotate(this.rotation);
 
-    const rx = width / 2;
-    const ry = height / 2;
+    contextCanvas.beginPath();
+    contextCanvas.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
 
-    if (rx > 0 && ry > 0) {
+    if (this.fillColor !== null && this.fillColor !== undefined) {
+      contextCanvas.fillStyle = this.fillColor;
+      contextCanvas.fill();
+    }
+
+    let drawBorderColor = this.borderColor;
+    let drawBorderWidth = this.borderWidth;
+    if (isSelected && (drawBorderColor === "transparent" || drawBorderWidth === 0 || drawBorderWidth == null)) {
+      drawBorderColor = "blue";
+      drawBorderWidth = 1;
+    }
+
+    if (drawBorderWidth > 0 && drawBorderWidth != null) {
+      contextCanvas.strokeStyle = drawBorderColor;
+      contextCanvas.lineWidth = drawBorderWidth;
+      contextCanvas.stroke();
+    }
+
+    if (!this.isEditingText && this.text !== null && (this.textSize !== null && this.textSize != 0)) {
+      const padding = 5;
+      const maxTextWidth = Math.max(0, width - padding * 2);
+      const maxTextHeight = Math.max(0, height - padding * 2);
+      const textSize = this.textSize || 14;
+      const textHeight = getRichTextHeight(this.text, maxTextWidth, textSize, this.textFont || "Arial");
+
+      contextCanvas.save();
       contextCanvas.beginPath();
       contextCanvas.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      contextCanvas.clip();
 
-      if (this.fillColor !== null && this.fillColor !== undefined) {
-        contextCanvas.fillStyle = this.fillColor;
-        contextCanvas.fill();
-      }
-
-      let drawBorderColor = this.borderColor;
-      let drawBorderWidth = this.borderWidth;
-
-      if (isSelected && (drawBorderColor === "transparent" || drawBorderWidth === 0 || drawBorderWidth == null)) {
-        drawBorderColor = "blue";
-        drawBorderWidth = 1;
-      }
-
-      if (drawBorderWidth > 0 && drawBorderWidth != null) {
-        contextCanvas.strokeStyle = drawBorderColor;
-        contextCanvas.lineWidth = drawBorderWidth;
-        contextCanvas.stroke();
-      }
-
-      if (!this.isEditingText && this.text !== null && (this.textSize !== null && this.textSize != 0)) {
-        const padding = 5;
-        const maxTextWidth = Math.max(0, width - padding * 2);
-        const maxTextHeight = Math.max(0, height - padding * 2);
-
-        contextCanvas.save();
-        contextCanvas.beginPath();
-        contextCanvas.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-        contextCanvas.clip();
-
-        renderRichText(
-          contextCanvas,
-          this.text,
-          -width / 2 + padding,
-          -height / 2 + padding,
-          maxTextWidth,
-          this.textSize,
-          this.textFont || "Arial",
-          this.color,
-          "center",
-          "center",
-          maxTextHeight
-        );
-
-        contextCanvas.restore();
-      }
+      renderRichText(
+        contextCanvas,
+        this.text,
+        -width / 2 + padding,
+        -height / 2 + padding,
+        maxTextWidth,
+        this.textSize,
+        this.textFont || "Arial",
+        this.color,
+        "center",
+        "center",
+        maxTextHeight
+      );
+      contextCanvas.restore();
     }
 
     contextCanvas.restore();
@@ -1231,79 +1212,122 @@ class oval extends rectangle {
 
     const normX = localPoint.x / (rx + hitrange);
     const normY = localPoint.y / (ry + hitrange);
-
     return (normX * normX + normY * normY) <= 1;
   }
 
-  distanceToPoint(point) {
-    const localPoint = this.worldToLocal(point);
-    const rx = this.getWidth() / 2;
-    const ry = this.getHeight() / 2;
-    if (rx <= 0 || ry <= 0) return Infinity;
-    const normX = localPoint.x / rx;
-    const normY = localPoint.y / ry;
-    const distFactor = Math.sqrt(normX * normX + normY * normY);
-    if (distFactor <= 1) return 0;
-    return Math.abs(distFactor - 1) * Math.min(rx, ry);
+  getTextEditorInfo() {
+    const info = super.getTextEditorInfo();
+    info.align = "center";
+    info.vAlign = "center";
+    return info;
   }
+}
 
-  getLinkAtPoint(point) {
-    if (!this.text) return null;
-    const width = this.getWidth();
-    const height = this.getHeight();
-    const padding = 5;
-    const maxTextWidth = Math.max(0, width - padding * 2);
-    const maxTextHeight = Math.max(0, height - padding * 2);
-    const textSize = this.textSize || 14;
+class image extends rectangle {
+  constructor(location, fillColor = "transparent", borderWidth = 0, borderColor = "#000000", text = null, textSize = 14, color = "#000000", textFont = "Arial", imageSrc = null) {
+    super(location, fillColor, borderWidth, text, textSize, color, fillColor, textFont);
+    /*
+    this.location = location;
+    this.fillColor = fillColor;
+    this.borderWidth = borderWidth;
+    this.borderColor = borderColor;
+    this.text = text;
+    this.textSize = textSize;
+    this.color = color;
+    this.textFont = textFont;
+    */
+    this.imageSrc = imageSrc;
+    this.imgElement = null;
+    this.isLoaded = false;
 
-    const localPoint = this.worldToLocal(point);
-
-    return getRichTextLinkAtPoint(
-      this.text,
-      localPoint,
-      -width / 2 + padding,
-      -height / 2 + padding,
-      maxTextWidth,
-      textSize,
-      this.textFont || "Arial",
-      "center",
-      "center",
-      maxTextHeight
-    );
+    if (imageSrc) {
+      this.loadImage(imageSrc);
+    }
   }
 
   getTextEditorInfo() {
-    const width = this.getWidth();
-    const height = this.getHeight();
-    const padding = 5;
-    const maxTextWidth = Math.max(0, width - padding * 2);
-    const maxTextHeight = Math.max(0, height - padding * 2);
-    const textSize = this.textSize || 14;
+    const info = super.getTextEditorInfo();
+    info.align = "center";
+    info.vAlign = "center";
+    return info;
+  }
 
-    const textHeight = getRichTextHeight(this.text, maxTextWidth, textSize, this.textFont || "Arial");
+  loadImage(src, callback) {
+    this.imageSrc = src;
+    this.isLoaded = false;
+    const img = new Image();
 
+    if (src.startsWith('/api/v1/uploads/') || src.startsWith('http')) {
+      const jwtToken = getCookieValue('auth');
+      const version = getCookieValue('version');
+      const authHeader = jwtToken ? `Bearer ${jwtToken}${version ? ',' + version : ''}` : null;
+
+      fetch(src, {
+        headers: authHeader ? { 'Authorization': authHeader } : {}
+      })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+        return res.blob();
+      })
+      .then(blob => {
+        const objectUrl = URL.createObjectURL(blob);
+        img.onload = () => {
+          this.imgElement = img;
+          this.isLoaded = true;
+          if (callback) callback();
+        };
+        img.src = objectUrl;
+      })
+      .catch(err => {
+        console.error('Failed to load authenticated canvas image:', err);
+      });
+    } else {
+      img.onload = () => {
+        this.imgElement = img;
+        this.isLoaded = true;
+        if (callback) callback();
+      };
+      img.src = src;
+    }
+  }
+
+  getWidth() {
+    return Math.abs(this.location[1].x - this.location[0].x);
+  }
+
+  getHeight() {
+    return Math.abs(this.location[1].y - this.location[0].y);
+  }
+
+  getCenter() {
     return {
-      point: this.localToWorld({
-        x: -width / 2 + padding,
-        y: -height / 2 + padding,
-      }),
-      angle: this.rotation,
-      width: maxTextWidth,
-      height: Math.max(maxTextHeight, textHeight),
-      align: "center",
-      vAlign: "center"
+      x: (this.location[0].x + this.location[1].x) / 2,
+      y: (this.location[0].y + this.location[1].y) / 2
     };
   }
-}
 
-function handleShapeLinkClick(shape, point) {
-  if (!shape) return false;
-  const link = shape.getLinkAtPoint(point);
-  if (link) {
-    window.open(link, '_blank', 'noopener,noreferrer');
-    return true;
+  draw(contextCanvas) {
+    const width = this.getWidth();
+    const height = this.getHeight();
+    const center = this.getCenter();
+
+    contextCanvas.save();
+    contextCanvas.translate(center.x, center.y);
+
+    if (this.isLoaded && this.imgElement) {
+      contextCanvas.drawImage(this.imgElement, -width / 2, -height / 2, width, height);
+    } else {
+      contextCanvas.fillStyle = '#f0f0f0';
+      contextCanvas.fillRect(-width / 2, -height / 2, width, height);
+    }
+
+    if (this.borderWidth > 0 && this.borderColor) {
+      contextCanvas.strokeStyle = this.borderColor;
+      contextCanvas.lineWidth = this.borderWidth;
+      contextCanvas.strokeRect(-width / 2, -height / 2, width, height);
+    }
+
+    contextCanvas.restore();
   }
-  return false;
 }
-
-export { line, rectangle, oval, getRichTextLinkAtPoint, handleShapeLinkClick };
+export { line, rectangle, oval, image };
